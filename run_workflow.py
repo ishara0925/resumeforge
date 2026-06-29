@@ -15,17 +15,36 @@ load_dotenv()
 
 def compile_latex(tex_path):
     """Compiles a LaTeX document twice to resolve links, using pdflatex if available."""
-    if not shutil.which("pdflatex"):
-        print(f"[Warning] 'pdflatex' command not found on system PATH. Skipping compilation for: {tex_path}")
+    pdflatex_path = shutil.which("pdflatex")
+    if not pdflatex_path:
+        # Check standard Windows paths
+        possible_paths = [
+            r"C:\Program Files\MiKTeX\miktex\bin\x64\pdflatex.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\pdflatex.exe")
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                pdflatex_path = p
+                break
+                
+    if not pdflatex_path:
+        print(f"[Warning] 'pdflatex' command not found on system PATH or default MiKTeX paths. Skipping compilation for: {tex_path}")
         return False
         
-    print(f"Compiling {tex_path} to PDF...")
+    print(f"Compiling {tex_path} to PDF using: {pdflatex_path}...")
     try:
         out_dir = os.path.dirname(tex_path) or "."
+        # Prepend the directory of the resolved pdflatex to environment PATH
+        pdflatex_dir = os.path.dirname(pdflatex_path)
+        env = os.environ.copy()
+        if pdflatex_dir:
+            env["PATH"] = pdflatex_dir + os.pathsep + env.get("PATH", "")
+            
         # Run twice to resolve moderncv references/elements
         for i in range(2):
             subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", f"-output-directory={out_dir}", tex_path],
+                [pdflatex_path, "-interaction=nonstopmode", f"-output-directory={out_dir}", tex_path],
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
