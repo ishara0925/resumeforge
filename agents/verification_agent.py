@@ -116,18 +116,20 @@ async def verify_ats_async(latex_cv: str, jd_text: str) -> ATSVerificationResult
     
     events = await runner.run_debug(prompt)
     for event in events:
-        if event.is_final_response() and event.output:
-            # Parse dict back to ATSVerificationResult
-            result = ATSVerificationResult.model_validate(event.output)
-            
-            # Post-processing fallback: guarantee that TF-IDF missing keywords are represented in feedback
-            for kw in missing_keywords:
-                phrase = f"Inject missing keyword/phrase: '{kw}'"
-                # If keyword is not explicitly mentioned in any of the feedback points, append it
-                if not any(kw.lower() in fb.lower() for fb in result.feedback):
-                    result.feedback.append(phrase)
-                    
-            return result
+        if event.is_final_response():
+            val = (event.actions.state_delta.get("verification_result") if event.actions else None) or event.output
+            if val:
+                # Parse dict back to ATSVerificationResult
+                result = ATSVerificationResult.model_validate(val)
+                
+                # Post-processing fallback: guarantee that TF-IDF missing keywords are represented in feedback
+                for kw in missing_keywords:
+                    phrase = f"Inject missing keyword/phrase: '{kw}'"
+                    # If keyword is not explicitly mentioned in any of the feedback points, append it
+                    if not any(kw.lower() in fb.lower() for fb in result.feedback):
+                        result.feedback.append(phrase)
+                        
+                return result
             
     raise ValueError("Verification Agent failed to return a validated structured output.")
 

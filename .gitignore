@@ -39,3 +39,14 @@ env/
 *.njsproj
 *.sln
 *.swp
+
+# Environment files
+.env
+.env.*
+
+# Input documents
+*.pdf
+jd.txt
+
+# Generated data
+data/

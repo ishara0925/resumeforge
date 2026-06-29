@@ -177,9 +177,10 @@ async def parse_cv_to_details_async(file_path: str) -> CVDetails:
     
     events = await runner.run_debug(prompt)
     for event in events:
-        if event.is_final_response() and event.output:
-            # event.output is returned as a dict by validate_schema
-            return CVDetails.model_validate(event.output)
+        if event.is_final_response():
+            val = (event.actions.state_delta.get("parsed_cv") if event.actions else None) or event.output
+            if val:
+                return CVDetails.model_validate(val)
             
     raise ValueError("CV Parser Agent failed to return a validated structured output.")
 

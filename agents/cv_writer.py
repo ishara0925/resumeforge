@@ -8,7 +8,7 @@ AGENT_INSTRUCTION = (
     "based on the candidate's CV details and matchmaker suggestions.\n"
     "Ensure you use clean, standard LaTeX packages (like geometry, hyperref, titlesec, enumitem) "
     "and output a complete, valid LaTeX document that can be compiled using pdflatex.\n"
-    "Only return the LaTeX code, starting with \\documentclass and ending with \\end{document}. "
+    "Only return the LaTeX code, starting with \\documentclass and ending with the end-document statement. "
     "Do not include any backticks or markdown code blocks in your final output, only the raw LaTeX code.\n\n"
     "STRICT DIRECTIVES:\n"
     "1. STAR Method: You MUST rewrite every professional experience bullet point so that it starts with a strong action verb, describes the action taken, and ends with a quantifiable, measurable result.\n"

@@ -50,9 +50,10 @@ async def parse_jd_async(jd_string: str) -> JDDetails:
     
     events = await runner.run_debug(prompt)
     for event in events:
-        if event.is_final_response() and event.output:
-            # event.output is returned as a dict by validate_schema
-            return JDDetails.model_validate(event.output)
+        if event.is_final_response():
+            val = (event.actions.state_delta.get("parsed_jd") if event.actions else None) or event.output
+            if val:
+                return JDDetails.model_validate(val)
             
     raise ValueError("JD Parser Agent failed to return a validated structured output.")
 

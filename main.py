@@ -12,21 +12,22 @@ from google.genai import types
 # Load API keys from environment/dotenv
 load_dotenv()
 
-# Import our custom agents
-from agents.cv_parser import parse_cv_to_markdown
-from agents.jd_parser import parse_jd
-from agents.match_maker import match_cv_and_jd, generate_match_chart
-from agents.cv_writer import write_cv
-from agents.cover_letter_agent import generate_cover_letter
-from agents.verification_agent import verify_ats, ATSVerificationResult
+# Import our custom agents (async versions to avoid nesting event loop issues)
+from agents.cv_parser import parse_cv_to_details_async, cv_details_to_markdown
+from agents.jd_parser import parse_jd_async
+from agents.match_maker import match_cv_and_jd_async, generate_match_chart
+from agents.cv_writer import write_cv_async
+from agents.cover_letter_agent import generate_cover_letter_async
+from agents.verification_agent import verify_ats_async, ATSVerificationResult
 
 # --- ADK Workflow Node Definitions ---
 
 @node(name="parse_cv_node")
-def parse_cv_node(cv_file_path: str) -> str:
+async def parse_cv_node(cv_file_path: str) -> str:
     """Extracts CV text and formats it into Markdown."""
     print(f"[Node: CV Parser] Extracting & parsing CV from: {cv_file_path}")
-    return parse_cv_to_markdown(cv_file_path)
+    details = await parse_cv_to_details_async(cv_file_path)
+    return cv_details_to_markdown(details)
 
 @node(name="edit_cv_markdown_node", rerun_on_resume=False)
 async def edit_cv_markdown_node(ctx: Context, initial_markdown: str):
@@ -42,16 +43,16 @@ async def edit_cv_markdown_node(ctx: Context, initial_markdown: str):
     )
 
 @node(name="parse_jd_node")
-def parse_jd_node(jd_string: str):
+async def parse_jd_node(jd_string: str):
     """Extracts required skills and experience from the Job Description."""
     print("[Node: JD Parser] Parsing Job Description details...")
-    return parse_jd(jd_string)
+    return await parse_jd_async(jd_string)
 
 @node(name="match_maker_node")
-def match_maker_node(cv_markdown: str, jd_details_json: str):
+async def match_maker_node(cv_markdown: str, jd_details_json: str):
     """Compares CV and Job Description to output strong matches, gaps, and a match score."""
     print("[Node: Match Maker] Matching candidate CV against JD requirements...")
-    return match_cv_and_jd(cv_markdown, jd_details_json)
+    return await match_cv_and_jd_async(cv_markdown, jd_details_json)
 
 @node(name="generate_chart_node")
 def generate_chart_node(skills_comparison: list, chart_path: str):
@@ -74,24 +75,37 @@ async def ask_match_approval(ctx: Context, score: int, chart_path: str):
     )
 
 @node(name="cv_writer_node")
-def cv_writer_node(cv_markdown: str, feedback_str: str) -> str:
+async def cv_writer_node(cv_markdown: str, feedback_str: str) -> str:
     """Generates LaTeX CV using cv_writer agent."""
     print("[Node: CV Writer] Drafting LaTeX CV...")
-    return write_cv(cv_markdown, feedback_str)
+    return await write_cv_async(cv_markdown, feedback_str)
 
 @node(name="verification_node")
-def verification_node(latex_cv: str, jd_text: str):
+async def verification_node(latex_cv: str, jd_text: str):
     """Simulates ATS compatibility check and returns verification results."""
     print("[Node: Verification] Running simulated ATS compatibility check with TF-IDF keyword check...")
-    return verify_ats(latex_cv, jd_text)
+    return await verify_ats_async(latex_cv, jd_text)
 
 @node(name="cover_letter_node")
-def cover_letter_node(cv_markdown: str, jd_details_json: str) -> str:
+async def cover_letter_node(cv_markdown: str, jd_details_json: str) -> str:
     """Generates a tailored cover letter."""
     print("[Node: Cover Letter] Drafting cover letter...")
-    return generate_cover_letter(cv_markdown, jd_details_json)
+    return await generate_cover_letter_async(cv_markdown, jd_details_json)
 
 # --- Main ADK Orchestrator Workflow ---
+
+class SafeAccess:
+    def __init__(self, data):
+        self._data = data if isinstance(data, dict) else {}
+        self._obj = data
+    def __getattr__(self, name):
+        if hasattr(self._obj, name):
+            return getattr(self._obj, name)
+        return self._data.get(name)
+    def model_dump_json(self):
+        if hasattr(self._obj, "model_dump_json"):
+            return self._obj.model_dump_json()
+        return json.dumps(self._data)
 
 @node(name="kero_cv_workflow", rerun_on_resume=True)
 async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
@@ -101,6 +115,9 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         data = json.loads(node_input)
         cv_file_path = data["cv_file_path"]
         jd_string = data["jd_string"]
+        ctx.state["cv_file_path"] = cv_file_path
+        ctx.state["jd_string"] = jd_string
+        ctx.state["jd_text"] = jd_string
     except Exception as e:
         raise ValueError(
             "Workflow input must be a JSON-formatted string with 'cv_file_path' and 'jd_string' keys. "
@@ -108,29 +125,35 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         )
 
     # STEP 1: Parse CV
-    raw_md = await ctx.run_node(parse_cv_node, cv_file_path)
+    raw_md = await ctx.run_node(parse_cv_node)
 
     # STEP 2: HITL Pause - CV Markdown Review
-    user_edited_cv = await ctx.run_node(edit_cv_markdown_node, raw_md)
+    ctx.state["initial_markdown"] = raw_md
+    user_edited_cv = await ctx.run_node(edit_cv_markdown_node)
     if user_edited_cv and user_edited_cv.strip() and user_edited_cv.strip().lower() not in ("yes", "y", "proceed", "ok"):
         cv_markdown = user_edited_cv.strip()
     else:
         cv_markdown = raw_md
+    ctx.state["cv_markdown"] = cv_markdown
 
     # STEP 3: Parse JD
-    jd_details = await ctx.run_node(parse_jd_node, jd_string)
+    jd_details = SafeAccess(await ctx.run_node(parse_jd_node))
     jd_details_json = jd_details.model_dump_json()
+    ctx.state["jd_details_json"] = jd_details_json
 
     # STEP 4: Match Making
-    match_result = await ctx.run_node(match_maker_node, cv_markdown, jd_details_json)
+    match_result = SafeAccess(await ctx.run_node(match_maker_node))
 
     # Generate Matplotlib chart
     chart_path = "data/match_chart.png"
-    await ctx.run_node(generate_chart_node, match_result.skills_comparison, chart_path)
+    ctx.state["skills_comparison"] = match_result.skills_comparison
+    ctx.state["chart_path"] = chart_path
+    await ctx.run_node(generate_chart_node)
 
     # STEP 5: HITL Pause - Low score check (< 70)
     if match_result.match_score < 70:
-        approval = await ctx.run_node(ask_match_approval, match_result.match_score, chart_path)
+        ctx.state["score"] = match_result.match_score
+        approval = await ctx.run_node(ask_match_approval)
         if approval.strip().lower() not in ("yes", "y", "approve", "proceed", "ok"):
             raise ValueError(f"Workflow aborted by user. Low match score: {match_result.match_score}/100")
 
@@ -143,10 +166,12 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
 
     # Initial draft
     feedback_str = "Initial draft based on CV parser and match analysis."
-    latex_cv = await ctx.run_node(cv_writer_node, cv_markdown, feedback_str)
+    ctx.state["feedback_str"] = feedback_str
+    latex_cv = await ctx.run_node(cv_writer_node)
+    ctx.state["latex_cv"] = latex_cv
 
     # Simulated ATS Check
-    verification = await ctx.run_node(verification_node, latex_cv, jd_string)
+    verification = SafeAccess(await ctx.run_node(verification_node))
     ats_score = verification.score
     feedback_log.extend(verification.feedback)
 
@@ -156,12 +181,14 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         print(f"[Workflow] ATS score {ats_score}/100 is below 90. Refining LaTeX CV (Iteration {loop_count} of {max_loops})...")
         
         feedback_str = "Refine the LaTeX formatting to address the following feedback:\n" + "\n".join([f"- {fb}" for fb in feedback_log])
+        ctx.state["feedback_str"] = feedback_str
         
         # Regenerate LaTeX CV with accumulated feedback
-        latex_cv = await ctx.run_node(cv_writer_node, cv_markdown, feedback_str)
+        latex_cv = await ctx.run_node(cv_writer_node)
+        ctx.state["latex_cv"] = latex_cv
         
         # Re-verify
-        verification = await ctx.run_node(verification_node, latex_cv, jd_string)
+        verification = SafeAccess(await ctx.run_node(verification_node))
         ats_score = verification.score
         feedback_log = list(verification.feedback)
 
@@ -171,7 +198,7 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         print(f"[Workflow] ATS score requirement satisfied: {ats_score}/100.")
 
     # STEP 7: Generate Cover Letter
-    cover_letter = await ctx.run_node(cover_letter_node, cv_markdown, jd_details_json)
+    cover_letter = await ctx.run_node(cover_letter_node)
 
     # Final Output Report
     report = {

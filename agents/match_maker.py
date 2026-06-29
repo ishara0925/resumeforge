@@ -32,14 +32,22 @@ def generate_match_chart(skills_comparison: List[SkillsComparison], output_path:
     if dir_name and not os.path.exists(dir_name):
         os.makedirs(dir_name, exist_ok=True)
         
+    # Coerce dictionary items to SkillsComparison models if needed
+    typed_skills = []
+    for item in skills_comparison:
+        if isinstance(item, dict):
+            typed_skills.append(SkillsComparison.model_validate(item))
+        else:
+            typed_skills.append(item)
+            
     # Sort skills: possessed ones first
-    sorted_skills = sorted(skills_comparison, key=lambda x: x.possessed, reverse=True)
+    sorted_skills = sorted(typed_skills, key=lambda x: x.possessed, reverse=True)
     
     names = [item.required_skill for item in sorted_skills]
     possessed = [1 if item.possessed else 0 for item in sorted_skills]
     
     # Elegant, curated palette: soft teal (#00A896) for possessed, coral red (#E63946) for missing
-    colors = ['#00A896' if p else '#E63946' for p in possessed]
+    colors = ['#00A896' if p.possessed else '#E63946' for p in sorted_skills]
     
     # Create figure
     height = max(4, min(10, len(names) * 0.5))
@@ -152,9 +160,10 @@ async def match_cv_and_jd_async(cv_data: str, jd_data: str) -> MatchAnalysis:
     
     events = await runner.run_debug(prompt)
     for event in events:
-        if event.is_final_response() and event.output:
-            # event.output is returned as a dict by validate_schema
-            return MatchAnalysis.model_validate(event.output)
+        if event.is_final_response():
+            val = (event.actions.state_delta.get("match_analysis") if event.actions else None) or event.output
+            if val:
+                return MatchAnalysis.model_validate(val)
             
     raise ValueError("Match Maker Agent failed to return a validated structured output.")
 
