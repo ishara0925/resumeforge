@@ -5,3 +5,4 @@ plotly
 pymupdf
 python-docx
 requests
+scikit-learn

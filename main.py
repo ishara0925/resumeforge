@@ -80,10 +80,10 @@ def cv_writer_node(cv_markdown: str, feedback_str: str) -> str:
     return write_cv(cv_markdown, feedback_str)
 
 @node(name="verification_node")
-def verification_node(latex_cv: str):
+def verification_node(latex_cv: str, jd_text: str):
     """Simulates ATS compatibility check and returns verification results."""
-    print("[Node: Verification] Running simulated ATS compatibility check...")
-    return verify_ats(latex_cv)
+    print("[Node: Verification] Running simulated ATS compatibility check with TF-IDF keyword check...")
+    return verify_ats(latex_cv, jd_text)
 
 @node(name="cover_letter_node")
 def cover_letter_node(cv_markdown: str, jd_details_json: str) -> str:
@@ -146,7 +146,7 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
     latex_cv = await ctx.run_node(cv_writer_node, cv_markdown, feedback_str)
 
     # Simulated ATS Check
-    verification = await ctx.run_node(verification_node, latex_cv)
+    verification = await ctx.run_node(verification_node, latex_cv, jd_string)
     ats_score = verification.score
     feedback_log.extend(verification.feedback)
 
@@ -161,7 +161,7 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         latex_cv = await ctx.run_node(cv_writer_node, cv_markdown, feedback_str)
         
         # Re-verify
-        verification = await ctx.run_node(verification_node, latex_cv)
+        verification = await ctx.run_node(verification_node, latex_cv, jd_string)
         ats_score = verification.score
         feedback_log = list(verification.feedback)
 
