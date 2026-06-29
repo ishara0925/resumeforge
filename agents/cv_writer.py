@@ -18,6 +18,7 @@ AGENT_INSTRUCTION = (
     "\\moderncvstyle(classic)\n"
     "\\moderncvcolor(blue)\n"
     "\\usepackage[scale=0.75](geometry)\n"
+    "\\usepackage(lmodern) (you MUST include this to ensure scalable fonts are loaded)\n"
     "\\name(FirstName)(LastName) (e.g., \\name(Hasith Ishara)(Kulathilaka))\n"
     "\\title(Curriculum Vitae)\n"
     "\\address(City)(Country)\n"
