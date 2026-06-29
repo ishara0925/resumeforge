@@ -1,0 +1,7 @@
+google-adk
+pydantic
+matplotlib
+plotly
+pymupdf
+python-docx
+requests
