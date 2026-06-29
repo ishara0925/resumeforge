@@ -205,6 +205,7 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         "match_score": match_result.match_score,
         "ats_score": ats_score,
         "chart_path": chart_path,
+        "cv_markdown": cv_markdown,
         "latex_cv": latex_cv,
         "cover_letter": cover_letter
     }

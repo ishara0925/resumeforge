@@ -1,6 +1,8 @@
 import os
 import json
 import asyncio
+import subprocess
+import shutil
 from dotenv import load_dotenv
 from google.adk.runners import InMemoryRunner
 from google.genai import types
@@ -10,6 +12,31 @@ from google.adk.utils._debug_output import print_event
 
 # Load environment
 load_dotenv()
+
+def compile_latex(tex_path):
+    """Compiles a LaTeX document twice to resolve links, using pdflatex if available."""
+    if not shutil.which("pdflatex"):
+        print(f"[Warning] 'pdflatex' command not found on system PATH. Skipping compilation for: {tex_path}")
+        return False
+        
+    print(f"Compiling {tex_path} to PDF...")
+    try:
+        out_dir = os.path.dirname(tex_path) or "."
+        # Run twice to resolve moderncv references/elements
+        for i in range(2):
+            subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", f"-output-directory={out_dir}", tex_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True
+            )
+        print(f"Successfully compiled: {os.path.splitext(tex_path)[0]}.pdf")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[Error] Failed compiling {tex_path}. Exit code: {e.returncode}")
+        print(f"STDOUT excerpt:\n{e.stdout[:800]}\n")
+        return False
 
 async def run_automated_workflow():
     cv_file = "CV_HI_KULATHILAKA_2026_07.pdf"
@@ -111,15 +138,29 @@ async def run_automated_workflow():
                     # Write results to output files
                     os.makedirs("data", exist_ok=True)
                     
+                    # 1. Save CV Markdown (.md)
+                    cv_md_path = "data/parsed_cv.md"
+                    with open(cv_md_path, "w", encoding="utf-8") as f:
+                        f.write(report.get("cv_markdown", ""))
+                    print(f"Parsed CV Markdown saved to: {cv_md_path}")
+                    
+                    # 2. Save LaTeX CV (.tex)
                     latex_cv_path = "data/output_cv.tex"
                     with open(latex_cv_path, "w", encoding="utf-8") as f:
                         f.write(report.get("latex_cv", ""))
                     print(f"LaTeX CV written to: {latex_cv_path}")
 
-                    cover_letter_path = "data/output_cover_letter.txt"
+                    # 3. Save LaTeX Cover Letter (.tex)
+                    cover_letter_path = "data/output_cover_letter.tex"
                     with open(cover_letter_path, "w", encoding="utf-8") as f:
                         f.write(report.get("cover_letter", ""))
-                    print(f"Cover Letter written to: {cover_letter_path}")
+                    print(f"Cover Letter LaTeX written to: {cover_letter_path}")
+                    
+                    # 4. Compile CV to PDF
+                    compile_latex(latex_cv_path)
+                    
+                    # 5. Compile Cover Letter to PDF
+                    compile_latex(cover_letter_path)
                     
                 except Exception as e:
                     print("Failed to parse report or write output files:", e)
