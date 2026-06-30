@@ -37,14 +37,25 @@ def compile_latex(tex_path):
         print(f"[Warning] 'xelatex' command not found on system PATH or default MiKTeX paths. Skipping compilation for: {tex_path}")
         return False
         
+    out_dir = os.path.dirname(tex_path) or "."
+    
+    # Copy awesome-cv.cls to out_dir so that standard compilation works out-of-the-box
+    cls_src = os.path.join("templates", "awesome-cv.cls")
+    if os.path.exists(cls_src):
+        os.makedirs(out_dir, exist_ok=True)
+        shutil.copy2(cls_src, os.path.join(out_dir, "awesome-cv.cls"))
+        
     print(f"Compiling {tex_path} to PDF using: {xelatex_path}...")
     try:
-        out_dir = os.path.dirname(tex_path) or "."
         # Prepend the directory of the resolved xelatex to environment PATH
         xelatex_dir = os.path.dirname(xelatex_path)
         env = os.environ.copy()
         if xelatex_dir:
             env["PATH"] = xelatex_dir + os.pathsep + env.get("PATH", "")
+            
+        # Add templates folder to TEXINPUTS for safety
+        path_sep = ";" if os.name == "nt" else ":"
+        env["TEXINPUTS"] = f".{path_sep}{os.path.abspath('templates')}{path_sep}" + env.get("TEXINPUTS", "")
             
         # Run twice to resolve references/elements
         for i in range(2):
@@ -169,34 +180,41 @@ async def run_automated_workflow():
                         print(f"[JD {idx}] Skills Chart: {res.get('chart_path')}")
                         
                         # Write results to output files
-                        os.makedirs("data/output", exist_ok=True)
+                        company_name = res.get("company_name", "UnknownCompany")
+                        position = res.get("position", "UnknownPosition")
+                        user_name = res.get("user_name", "Candidate")
+                        user_name_with_initials = res.get("user_name_with_initials", "Candidate")
+                        directory_path = res.get("directory_path", f"data/output/{company_name}_{position}")
+                        
+                        os.makedirs(directory_path, exist_ok=True)
                         
                         # 1. Save CV Markdown (.md)
-                        cv_md_path = f"data/output/cv_markdown_{idx}.md"
+                        cv_md_path = os.path.join(directory_path, "cv_markdown.md")
                         with open(cv_md_path, "w", encoding="utf-8") as f:
                             f.write(res.get("cv_markdown", ""))
                         
                         # 2. Save LaTeX CV (.tex)
-                        latex_cv_path = f"data/output/cv_final_{idx}.tex"
+                        latex_cv_path = os.path.join(directory_path, f"CV_{user_name}_{company_name}_{position}.tex")
                         with open(latex_cv_path, "w", encoding="utf-8") as f:
                             f.write(res.get("latex_cv", ""))
                         print(f"[JD {idx}] LaTeX CV written to: {latex_cv_path}")
 
-                        # 3. Save LaTeX/Markdown Cover Letter (.md)
-                        cover_letter_path = f"data/output/cover_letter_{idx}.md"
-                        with open(cover_letter_path, "w", encoding="utf-8") as f:
-                            f.write(res.get("cover_letter", ""))
-                        print(f"[JD {idx}] Cover Letter written to: {cover_letter_path}")
+                        # 3. Save Cover Letter (.tex or .md)
+                        cover_letter = res.get("cover_letter", "")
+                        if "\\documentclass" in cover_letter:
+                            cl_tex_path = os.path.join(directory_path, f"COVER_{user_name_with_initials}_{company_name}_{position}.tex")
+                            with open(cl_tex_path, "w", encoding="utf-8") as f:
+                                f.write(cover_letter)
+                            print(f"[JD {idx}] Cover Letter written to: {cl_tex_path}")
+                            compile_latex(cl_tex_path)
+                        else:
+                            cl_md_path = os.path.join(directory_path, f"COVER_{user_name_with_initials}_{company_name}_{position}.md")
+                            with open(cl_md_path, "w", encoding="utf-8") as f:
+                                f.write(cover_letter)
+                            print(f"[JD {idx}] Cover Letter written to: {cl_md_path}")
                         
                         # 4. Compile CV to PDF
                         compile_latex(latex_cv_path)
-                        
-                        # 5. Compile Cover Letter to PDF if it is LaTeX
-                        if "\\documentclass" in res.get("cover_letter", ""):
-                            cl_tex_path = f"data/output/cover_letter_{idx}.tex"
-                            with open(cl_tex_path, "w", encoding="utf-8") as f:
-                                f.write(res.get("cover_letter", ""))
-                            compile_latex(cl_tex_path)
                             
                 except Exception as e:
                     print("Failed to parse report or write output files:", e)

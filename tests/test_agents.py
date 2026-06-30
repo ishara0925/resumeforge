@@ -42,6 +42,8 @@ class TestCVParserDeterministic(unittest.TestCase):
         """Verify formatting of CVDetails pydantic object to markdown."""
         details = CVDetails(
             full_name="Alice Smith",
+            user_name="Alice Smith",
+            user_name_with_initials="Alice S. Smith",
             email="alice@example.com",
             phone="123-456-7890",
             location="New York, USA",

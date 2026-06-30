@@ -108,6 +108,10 @@ def check_cover_letter_pages(latex_code: str) -> Optional[int]:
         if xelatex_dir:
             env["PATH"] = xelatex_dir + os.pathsep + env.get("PATH", "")
             
+        # Add templates directory to TEXINPUTS environment variable for compilation safety
+        path_sep = ";" if os.name == "nt" else ":"
+        env["TEXINPUTS"] = f".{path_sep}{os.path.abspath('templates')}{path_sep}" + env.get("TEXINPUTS", "")
+            
         # Run xelatex twice to resolve everything
         for _ in range(2):
             subprocess.run(

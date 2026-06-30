@@ -1,6 +1,8 @@
 import os
 import json
 import asyncio
+import shutil
+import subprocess
 from typing import Optional, List
 from dotenv import load_dotenv
 from google.adk import Context, Workflow
@@ -19,7 +21,8 @@ from agents.cv_parser import (
     cv_details_to_markdown,
     parse_cv_to_markdown_async,
     get_parsed_cv_path,
-    list_parsed_cv_files
+    list_parsed_cv_files,
+    extract_cv_variables_from_markdown
 )
 from agents.jd_parser import (
     parse_jd_async,
@@ -32,6 +35,61 @@ from agents.match_maker import match_cv_and_jd_async, generate_match_chart, gene
 from agents.cv_writer import write_cv_async
 from agents.cover_letter_agent import generate_cover_letter_async
 from agents.verification_agent import verify_ats_async, ATSVerificationResult
+
+def compile_latex(tex_path):
+    """Compiles a LaTeX document twice to resolve links, using xelatex if available."""
+    xelatex_path = shutil.which("xelatex")
+    if not xelatex_path:
+        # Check standard Windows paths
+        possible_paths = [
+            r"C:\Program Files\MiKTeX\miktex\bin\x64\xelatex.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\xelatex.exe")
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                xelatex_path = p
+                break
+                
+    if not xelatex_path:
+        print(f"[Warning] 'xelatex' command not found on system PATH or default MiKTeX paths. Skipping compilation for: {tex_path}")
+        return False
+        
+    out_dir = os.path.dirname(tex_path) or "."
+    
+    # Copy awesome-cv.cls to out_dir so that standard compilation works out-of-the-box
+    cls_src = os.path.join("templates", "awesome-cv.cls")
+    if os.path.exists(cls_src):
+        os.makedirs(out_dir, exist_ok=True)
+        shutil.copy2(cls_src, os.path.join(out_dir, "awesome-cv.cls"))
+        
+    print(f"Compiling {tex_path} to PDF using: {xelatex_path}...")
+    try:
+        # Prepend the directory of the resolved xelatex to environment PATH
+        xelatex_dir = os.path.dirname(xelatex_path)
+        env = os.environ.copy()
+        if xelatex_dir:
+            env["PATH"] = xelatex_dir + os.pathsep + env.get("PATH", "")
+            
+        # Add templates folder to TEXINPUTS for safety
+        path_sep = ";" if os.name == "nt" else ":"
+        env["TEXINPUTS"] = f".{path_sep}{os.path.abspath('templates')}{path_sep}" + env.get("TEXINPUTS", "")
+            
+        # Run twice to resolve references/elements
+        for i in range(2):
+            subprocess.run(
+                [xelatex_path, "-interaction=nonstopmode", f"-output-directory={out_dir}", tex_path],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True
+            )
+        print(f"Successfully compiled: {os.path.splitext(tex_path)[0]}.pdf")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[Error] Failed compiling {tex_path}. Exit code: {e.returncode}")
+        print(f"STDOUT excerpt:\n{e.stdout[:800]}\n")
+        return False
 
 # --- ADK Workflow Node Definitions ---
 
@@ -88,10 +146,25 @@ async def parse_jd_node(jd_string: str):
     return await parse_jd_async(jd_string)
 
 @node(name="match_maker_node")
-async def match_maker_node(cv_markdown: str, jd_details_json: str):
+async def match_maker_node(ctx: Context, cv_markdown: str, jd_details_json: str):
     """Compares CV and Job Description to output strong matches, gaps, and a match score."""
     print("[Node: Match Maker] Matching candidate CV against JD requirements...")
-    return await match_cv_and_jd_async(cv_markdown, jd_details_json)
+    match_result = await match_cv_and_jd_async(cv_markdown, jd_details_json)
+    
+    # Save the match report and chart inside the match maker agent/node using the state variables
+    directory_path = ctx.state.get("directory_path", "data/output")
+    os.makedirs(directory_path, exist_ok=True)
+    
+    chart_path = os.path.join(directory_path, "match_chart.png")
+    generate_match_chart(match_result.skills_comparison, chart_path)
+    
+    report_pdf_path = os.path.join(directory_path, "Match_Report.pdf")
+    generate_match_report_pdf(match_result, chart_path, report_pdf_path)
+    
+    ctx.state["chart_path"] = chart_path
+    ctx.state["report_pdf_path"] = report_pdf_path
+    
+    return match_result
 
 @node(name="generate_chart_node")
 def generate_chart_node(skills_comparison: list, chart_path: str):
@@ -118,10 +191,26 @@ async def ask_match_approval(ctx: Context, score: int, chart_path: str, report_p
     )
 
 @node(name="cv_writer_node")
-async def cv_writer_node(cv_markdown: str, feedback_str: str) -> str:
+async def cv_writer_node(ctx: Context, cv_markdown: str, feedback_str: str) -> str:
     """Generates LaTeX CV using cv_writer agent."""
     print("[Node: CV Writer] Drafting LaTeX CV...")
-    return await write_cv_async(cv_markdown, feedback_str)
+    latex_cv = await write_cv_async(cv_markdown, feedback_str)
+    
+    # Save raw LaTeX file to job-specific directory
+    user_name = ctx.state.get("USER_NAME", "Candidate")
+    company_name = ctx.state.get("COMPANY_NAME", "Company")
+    position = ctx.state.get("POSITION", "Position")
+    directory_path = ctx.state.get("directory_path", "data/output")
+    
+    if directory_path:
+        os.makedirs(directory_path, exist_ok=True)
+        filename = f"CV_{user_name}_{company_name}_{position}.tex"
+        filepath = os.path.join(directory_path, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(latex_cv)
+        print(f"[Node: CV Writer] Saved raw LaTeX CV to: {filepath}")
+        
+    return latex_cv
 
 @node(name="verification_node")
 async def verification_node(latex_cv: str, jd_text: str):
@@ -130,10 +219,26 @@ async def verification_node(latex_cv: str, jd_text: str):
     return await verify_ats_async(latex_cv, jd_text)
 
 @node(name="cover_letter_node")
-async def cover_letter_node(cv_markdown: str, jd_details_json: str) -> str:
+async def cover_letter_node(ctx: Context, cv_markdown: str, jd_details_json: str) -> str:
     """Generates a tailored cover letter."""
     print("[Node: Cover Letter] Drafting cover letter...")
-    return await generate_cover_letter_async(cv_markdown, jd_details_json)
+    cover_letter = await generate_cover_letter_async(cv_markdown, jd_details_json)
+    
+    # Save cover letter to job-specific directory
+    user_name_with_initials = ctx.state.get("USER_NAME_WITH_INITIALS", "Candidate")
+    company_name = ctx.state.get("COMPANY_NAME", "Company")
+    position = ctx.state.get("POSITION", "Position")
+    directory_path = ctx.state.get("directory_path", "data/output")
+    
+    if directory_path:
+        os.makedirs(directory_path, exist_ok=True)
+        filename = f"COVER_{user_name_with_initials}_{company_name}_{position}.tex"
+        filepath = os.path.join(directory_path, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(cover_letter)
+        print(f"[Node: Cover Letter] Saved cover letter LaTeX to: {filepath}")
+        
+    return cover_letter
 
 # --- Main ADK Orchestrator Workflow ---
 
@@ -285,24 +390,34 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         jd_details_json = json.dumps(jd_details_dict)
         ctx.state["jd_details_json"] = jd_details_json
         
+        # Extract job-specific variables
+        company_name = jd_details_dict.get("company_name", "UnknownCompany")
+        position = jd_details_dict.get("position", "UnknownPosition")
+        
+        # Extract candidate names
+        user_name, user_name_with_initials = extract_cv_variables_from_markdown(cv_markdown)
+        
+        # Output directory formatting
+        directory_path = f"data/output/{company_name}_{position}"
+        os.makedirs(directory_path, exist_ok=True)
+        
+        # Pass variables down in the state object to the Match Maker, CV Writer, and Cover Letter agents
+        ctx.state["USER_NAME"] = user_name
+        ctx.state["USER_NAME_WITH_INITIALS"] = user_name_with_initials
+        ctx.state["COMPANY_NAME"] = company_name
+        ctx.state["POSITION"] = position
+        ctx.state["directory_path"] = directory_path
+        
         # Get raw JD text for ATS verification
         raw_jd_path = os.path.join("data", "input", f"jd_raw_{idx}.md")
         with open(raw_jd_path, "r", encoding="utf-8") as f:
             current_jd_text = f.read()
         ctx.state["jd_text"] = current_jd_text
         
-        # STEP 4: Match Making
+        # STEP 4: Match Making (this will also generate chart and Match_Report.pdf inside directory_path)
         match_result = SafeAccess(await ctx.run_node(match_maker_node))
-        
-        # Generate chart
-        chart_path = f"data/match_chart_{idx}.png"
-        ctx.state["skills_comparison"] = match_result.skills_comparison
-        ctx.state["chart_path"] = chart_path
-        await ctx.run_node(generate_chart_node)
-        
-        # Generate PDF Match Report
-        report_pdf_path = f"data/output/match_report_{idx}.pdf"
-        generate_match_report_pdf(match_result._obj, chart_path, report_pdf_path)
+        chart_path = ctx.state["chart_path"]
+        report_pdf_path = ctx.state["report_pdf_path"]
         
         # STEP 5: HITL Pause - Low score check (< 70)
         if match_result.match_score < 70:
@@ -357,25 +472,27 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         # STEP 7: Generate Cover Letter
         cover_letter = await ctx.run_node(cover_letter_node)
         
-        # Save final outputs with corresponding indices (e.g. cv_final_<index>.tex and cover_letter_<index>.md)
-        cv_final_path = os.path.join("data", "output", f"cv_final_{idx}.tex")
-        cover_letter_path = os.path.join("data", "output", f"cover_letter_{idx}.md")
+        # Compile CV LaTeX to PDF inside the new directory
+        cv_tex_path = os.path.join(directory_path, f"CV_{user_name}_{company_name}_{position}.tex")
+        compile_latex(cv_tex_path)
         
-        os.makedirs(os.path.dirname(cv_final_path), exist_ok=True)
-        with open(cv_final_path, "w", encoding="utf-8") as f:
-            f.write(latex_cv)
-        with open(cover_letter_path, "w", encoding="utf-8") as f:
-            f.write(cover_letter)
-            
-        print(f"[Workflow] Saved final CV to: {cv_final_path}")
-        print(f"[Workflow] Saved final Cover Letter to: {cover_letter_path}")
+        # Compile Cover Letter LaTeX to PDF inside the new directory
+        cl_tex_path = os.path.join(directory_path, f"COVER_{user_name_with_initials}_{company_name}_{position}.tex")
+        compile_latex(cl_tex_path)
+        
+        print(f"[Workflow] Finalized CV and Cover Letter files saved and compiled in: {directory_path}")
         
         batch_results.append({
             "index": idx,
+            "company_name": company_name,
+            "position": position,
+            "user_name": user_name,
+            "user_name_with_initials": user_name_with_initials,
+            "directory_path": directory_path,
             "match_score": match_result.match_score,
             "ats_score": ats_score,
             "chart_path": chart_path,
-            "match_report_path": f"data/output/match_report_{idx}.pdf",
+            "match_report_path": report_pdf_path,
             "cv_markdown": cv_markdown,
             "latex_cv": latex_cv,
             "cover_letter": cover_letter
@@ -386,6 +503,11 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
     if batch_results:
         # Keep backward compatibility for single results checks in runner
         last_res = batch_results[-1]
+        report["company_name"] = last_res.get("company_name", "UnknownCompany")
+        report["position"] = last_res.get("position", "UnknownPosition")
+        report["user_name"] = last_res.get("user_name", "Candidate")
+        report["user_name_with_initials"] = last_res.get("user_name_with_initials", "Candidate")
+        report["directory_path"] = last_res.get("directory_path", "")
         report["match_score"] = last_res["match_score"]
         report["ats_score"] = last_res["ats_score"]
         report["chart_path"] = last_res["chart_path"]
