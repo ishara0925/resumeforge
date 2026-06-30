@@ -16,6 +16,65 @@ An intelligent, agentic workflow for parsing candidate CVs, matching them agains
 
 ---
 
+## 🛠️ Setup & Run Instructions
+
+To run Kero-CV on another machine, follow these steps:
+
+### 1. Prerequisites
+
+- **Python**: Ensure you have Python 3.10 or higher installed.
+- **LaTeX Compiler**: Install a LaTeX compiler with `xelatex` (e.g., [MiKTeX](https://miktex.org/) on Windows or [TeX Live](https://www.tug.org/texlive/) on Linux/macOS) and make sure `xelatex` is available in your system `PATH`.
+- **Gemini API Key**: You need a Gemini API Key to run the agentic workflow.
+
+### 2. Setup
+
+1. **Clone the Repository:**
+   ```bash
+   git clone <repository_url>
+   cd Kero-CV
+   ```
+
+2. **Set Up a Virtual Environment:**
+   *   **Windows:**
+       ```bash
+       python -m venv .venv
+       .venv\Scripts\activate
+       ```
+   *   **macOS / Linux:**
+       ```bash
+       python3 -m venv .venv
+       source .venv/bin/activate
+       ```
+
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure Environment Variables:**
+   Create a `.env` file in the root of the project:
+   ```env
+   GEMINI_API_KEY=your_actual_gemini_api_key_here
+   ```
+
+### 3. Usage
+
+1. **Prepare Inputs:**
+   - Place candidate CV/Resume files (PDF, DOCX, TXT, or MD format) inside the `data/input/` directory.
+   - Specify Job Description links or descriptions inside the input setup files.
+
+2. **Run the Automated Workflow:**
+   ```bash
+   python run_workflow.py
+   ```
+
+3. **Run Unit Tests:**
+   ```bash
+   python -m unittest tests/test_agents.py
+   ```
+
+---
+
 ## 📁 Template System
 
 We have integrated the **Awesome-CV** LaTeX template within this project's template directory:
