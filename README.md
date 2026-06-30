@@ -1,4 +1,4 @@
-# Kero-CV
+# resumeforge
 
 An intelligent, agentic workflow for parsing candidate CVs, matching them against Job Descriptions (JDs), visualizing gaps, performing simulated ATS checking, and automatically compiling tailored LaTeX CVs and cover letters into PDFs.
 
@@ -18,7 +18,7 @@ An intelligent, agentic workflow for parsing candidate CVs, matching them agains
 
 ## 🛠️ Setup & Run Instructions
 
-To run Kero-CV on another machine, follow these steps:
+To run resumeforge on another machine, follow these steps:
 
 ### 1. Prerequisites
 
@@ -31,7 +31,7 @@ To run Kero-CV on another machine, follow these steps:
 1. **Clone the Repository:**
    ```bash
    git clone <repository_url>
-   cd Kero-CV
+   cd resumeforge
    ```
 
 2. **Set Up a Virtual Environment:**
@@ -88,9 +88,9 @@ To run Kero-CV on another machine, follow these steps:
 ## 📁 Template System
 
 We have integrated the **Awesome-CV** LaTeX template within this project's template directory:
-*   [awesome-cv.cls](file:///D:/CreonSolutions/Kero-CV/templates/awesome-cv.cls) - Main document class styling and macros.
-*   [resume.tex](file:///D:/CreonSolutions/Kero-CV/templates/resume.tex) - Base resume structure file.
-*   [resume/](file:///D:/CreonSolutions/Kero-CV/templates/resume) - Modular sections directory (Experience, Education, Skills, Honors, etc.).
+*   [awesome-cv.cls](file:///D:/CreonSolutions/resumeforge/templates/awesome-cv.cls) - Main document class styling and macros.
+*   [resume.tex](file:///D:/CreonSolutions/resumeforge/templates/resume.tex) - Base resume structure file.
+*   [resume/](file:///D:/CreonSolutions/resumeforge/templates/resume) - Modular sections directory (Experience, Education, Skills, Honors, etc.).
 
 ---
 

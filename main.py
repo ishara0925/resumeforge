@@ -572,7 +572,7 @@ app = App(
 async def run_interactive_workflow():
     """Runs the workflow in the terminal with interactive human-in-the-loop triggers."""
     print("==================================================")
-    print("         Kero-CV Agent Workflow Console           ")
+    print("         resumeforge Agent Workflow Console           ")
     print("==================================================")
 
     # Get inputs
@@ -609,7 +609,7 @@ async def run_interactive_workflow():
     session_id = "cli_session"
     user_id = "cli_user"
 
-    print("\nStarting Kero-CV workflow...")
+    print("\nStarting resumeforge workflow...")
     
     # Start the execution
     events = await runner.run_debug(json.dumps(input_payload), user_id=user_id, session_id=session_id)
