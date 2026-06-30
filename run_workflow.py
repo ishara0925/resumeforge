@@ -1,3 +1,9 @@
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 import os
 import json
 import asyncio
@@ -14,36 +20,36 @@ from google.adk.utils._debug_output import print_event
 load_dotenv()
 
 def compile_latex(tex_path):
-    """Compiles a LaTeX document twice to resolve links, using pdflatex if available."""
-    pdflatex_path = shutil.which("pdflatex")
-    if not pdflatex_path:
+    """Compiles a LaTeX document twice to resolve links, using xelatex if available."""
+    xelatex_path = shutil.which("xelatex")
+    if not xelatex_path:
         # Check standard Windows paths
         possible_paths = [
-            r"C:\Program Files\MiKTeX\miktex\bin\x64\pdflatex.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\pdflatex.exe")
+            r"C:\Program Files\MiKTeX\miktex\bin\x64\xelatex.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\xelatex.exe")
         ]
         for p in possible_paths:
             if os.path.exists(p):
-                pdflatex_path = p
+                xelatex_path = p
                 break
                 
-    if not pdflatex_path:
-        print(f"[Warning] 'pdflatex' command not found on system PATH or default MiKTeX paths. Skipping compilation for: {tex_path}")
+    if not xelatex_path:
+        print(f"[Warning] 'xelatex' command not found on system PATH or default MiKTeX paths. Skipping compilation for: {tex_path}")
         return False
         
-    print(f"Compiling {tex_path} to PDF using: {pdflatex_path}...")
+    print(f"Compiling {tex_path} to PDF using: {xelatex_path}...")
     try:
         out_dir = os.path.dirname(tex_path) or "."
-        # Prepend the directory of the resolved pdflatex to environment PATH
-        pdflatex_dir = os.path.dirname(pdflatex_path)
+        # Prepend the directory of the resolved xelatex to environment PATH
+        xelatex_dir = os.path.dirname(xelatex_path)
         env = os.environ.copy()
-        if pdflatex_dir:
-            env["PATH"] = pdflatex_dir + os.pathsep + env.get("PATH", "")
+        if xelatex_dir:
+            env["PATH"] = xelatex_dir + os.pathsep + env.get("PATH", "")
             
-        # Run twice to resolve moderncv references/elements
+        # Run twice to resolve references/elements
         for i in range(2):
             subprocess.run(
-                [pdflatex_path, "-interaction=nonstopmode", f"-output-directory={out_dir}", tex_path],
+                [xelatex_path, "-interaction=nonstopmode", f"-output-directory={out_dir}", tex_path],
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -78,7 +84,8 @@ async def run_automated_workflow():
     }
 
     runner = InMemoryRunner(app=app)
-    session_id = "auto_session"
+    import time
+    session_id = f"auto_session_{int(time.time())}"
     user_id = "auto_user"
 
     print("--- STARTING WORKFLOW ---")

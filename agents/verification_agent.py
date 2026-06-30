@@ -16,6 +16,49 @@ class ATSVerificationResult(BaseModel):
 
 # --- Mathematical TF-IDF Keyword Density Check ---
 
+GENERIC_TERMS_BLOCKLIST = {
+    # Web / login / account terms
+    "login", "sign", "login sign", "notifications", "user", "user agreement", "agreement", "privacy", 
+    "privacy policy", "cookie", "cookie policy", "policy", "copyright", "copyright policy", "corporation", 
+    "linkedin", "linkedin corporation", "linkedin login", "linkedin notifications", "language", "feedback",
+    "feedback language", "guidelines", "community guidelines", "community", "guidelines cookie", "url", 
+    "http", "https", "www", "com", "net", "org", "website", "online", "browser", "internet",
+    # Non-technical / administrative / contract / pay terms
+    "remote", "hourly", "contract", "payment", "stripe", "wise", "candidate", "candidates", "status",
+    "opportunity", "remote role", "work", "job", "posted", "days ago", "sprint", "stretches", "hours",
+    "accepted task", "accepted work", "compensation", "stripe wise", "weekly", "weekly payment",
+    "h1-b", "stem opt", "opt", "h1b", "stem", "us citizen", "citizenship", "visa", "sponsorship",
+    "preferred", "required", "basic qualifications", "qualifications", "education", "degree",
+    "university", "top-500", "globally", "ranked", "school", "college", "gpa", "first class",
+    # Generic verbs & prepositions
+    "ability", "ability work", "strong", "strong analytical", "written", "communication",
+    "written communication", "independent", "independently", "follow", "detail", "attention",
+    "attention detail", "judgment", "honest", "honest judgment", "critical", "reading",
+    "critical reading", "nuance", "gaps", "reasoning", "gaps reasoning", "clear", "precise",
+    "written rationales", "rationales", "evaluation", "evaluation guidelines", "structured",
+    "experience", "years", "years experience", "building", "regular", "use", "tools",
+    "large-scale", "production", "systems", "production systems", "preferred", "role", "mercor",
+    "mercor logo", "posted mercor", "logo", "partners", "labs", "enterprises", "train",
+    "frontier", "models", "human", "expertise", "systems area", "area expertise", "competitively",
+    "collaborate", "researchers", "shape", "generation", "generation systems", "next generation",
+    "accept", "task", "stretch", "hours ramp-up", "ramp-up", "client", "requirement", "client requirement",
+    "stretches based", "stretches client", "sprint based", "runs", "stretch hours", "typical", "typical tasks",
+    "accepted", "time commitment", "commitment", "fit", "best", "best fit", "interest", "search"
+}
+
+def is_generic(term: str) -> bool:
+    term_lower = term.lower().strip()
+    if term_lower in GENERIC_TERMS_BLOCKLIST:
+        return True
+    words = [w.strip() for w in re.split(r'\s+', term_lower) if w.strip()]
+    if not words:
+        return True
+    if all(w in GENERIC_TERMS_BLOCKLIST for w in words):
+        return True
+    if re.match(r'^[0-9\s-]+$', term_lower):
+        return True
+    return False
+
 def check_keyword_density(cv_text: str, jd_text: str, top_n: int = 12) -> List[str]:
     """Uses TF-IDF Vectorizer to compare CV and JD and returns key terms missing in the CV."""
     def clean_text(text: str) -> str:
@@ -45,12 +88,13 @@ def check_keyword_density(cv_text: str, jd_text: str, top_n: int = 12) -> List[s
         # Sort terms by JD TF-IDF score descending
         jd_terms.sort(key=lambda x: x[1], reverse=True)
         
-        # Pick top N terms in JD that are missing in CV
+        # Pick top N terms in JD that are missing in CV and are not generic
         missing_terms = []
-        for term, jd_score, cv_score in jd_terms[:top_n]:
-            # Check if term is missing (cv_score == 0) and doesn't match common stop words
-            if cv_score == 0 and len(term.strip()) > 2:
+        for term, jd_score, cv_score in jd_terms:
+            if cv_score == 0 and len(term.strip()) > 2 and not is_generic(term):
                 missing_terms.append(term)
+                if len(missing_terms) >= top_n:
+                    break
                 
         return missing_terms
     except Exception as e:
