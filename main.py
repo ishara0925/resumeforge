@@ -22,7 +22,8 @@ from agents.cv_parser import (
     parse_cv_to_markdown_async,
     get_parsed_cv_path,
     list_parsed_cv_files,
-    extract_cv_variables_from_markdown
+    extract_cv_variables_from_markdown,
+    extract_text_from_file
 )
 from agents.jd_parser import (
     parse_jd_async,
@@ -31,10 +32,10 @@ from agents.jd_parser import (
     process_jds_step2_parse,
     read_jd_links
 )
-from agents.match_maker import match_cv_and_jd_async, generate_match_chart, generate_match_report_pdf
+from agents.match_maker import match_cv_and_jd_async, generate_match_chart
 from agents.cv_writer import write_cv_async
 from agents.cover_letter_agent import generate_cover_letter_async
-from agents.verification_agent import verify_ats_async, ATSVerificationResult
+from agents.verification_agent import verify_ats_async, ATSVerificationResult, generate_match_report_pdf
 
 def compile_latex(tex_path):
     """Compiles a LaTeX document twice to resolve links, using xelatex if available."""
@@ -151,18 +152,14 @@ async def match_maker_node(ctx: Context, cv_markdown: str, jd_details_json: str)
     print("[Node: Match Maker] Matching candidate CV against JD requirements...")
     match_result = await match_cv_and_jd_async(cv_markdown, jd_details_json)
     
-    # Save the match report and chart inside the match maker agent/node using the state variables
+    # Save only the match chart inside the match maker agent/node using the state variables
     directory_path = ctx.state.get("directory_path", "data/output")
     os.makedirs(directory_path, exist_ok=True)
     
     chart_path = os.path.join(directory_path, "match_chart.png")
     generate_match_chart(match_result.skills_comparison, chart_path)
     
-    report_pdf_path = os.path.join(directory_path, "Match_Report.pdf")
-    generate_match_report_pdf(match_result, chart_path, report_pdf_path)
-    
     ctx.state["chart_path"] = chart_path
-    ctx.state["report_pdf_path"] = report_pdf_path
     
     return match_result
 
@@ -213,10 +210,21 @@ async def cv_writer_node(ctx: Context, cv_markdown: str, feedback_str: str) -> s
     return latex_cv
 
 @node(name="verification_node")
-async def verification_node(latex_cv: str, jd_text: str):
+async def verification_node(cv_text: str, jd_text: str):
     """Simulates ATS compatibility check and returns verification results."""
-    print("[Node: Verification] Running simulated ATS compatibility check with TF-IDF keyword check...")
-    return await verify_ats_async(latex_cv, jd_text)
+    print("[Node: Verification] Running simulated ATS compatibility check on extracted CV text...")
+    return await verify_ats_async(cv_text, jd_text)
+
+@node(name="compile_report_node")
+def compile_report_node(ctx: Context, match_analysis_dict: dict, chart_path: str, ats_score: int):
+    """Generates the final PDF Match Report combining Match Maker and Verification Agent results."""
+    directory_path = ctx.state.get("directory_path", "data/output")
+    os.makedirs(directory_path, exist_ok=True)
+    report_pdf_path = os.path.join(directory_path, "Match_Report.pdf")
+    print(f"[Node: Report Compiler] Generating final Match Report PDF at {report_pdf_path}...")
+    generate_match_report_pdf(match_analysis_dict, chart_path, ats_score, report_pdf_path)
+    ctx.state["report_pdf_path"] = report_pdf_path
+    return report_pdf_path
 
 @node(name="cover_letter_node")
 async def cover_letter_node(ctx: Context, cv_markdown: str, jd_details_json: str) -> str:
@@ -414,10 +422,10 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
             current_jd_text = f.read()
         ctx.state["jd_text"] = current_jd_text
         
-        # STEP 4: Match Making (this will also generate chart and Match_Report.pdf inside directory_path)
+        # STEP 4: Match Making (this will generate the comparison chart inside directory_path)
         match_result = SafeAccess(await ctx.run_node(match_maker_node))
         chart_path = ctx.state["chart_path"]
-        report_pdf_path = ctx.state["report_pdf_path"]
+        report_pdf_path = ""
         
         # STEP 5: HITL Pause - Low score check (< 70)
         if match_result.match_score < 70:
@@ -440,6 +448,15 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         ctx.state["feedback_str"] = feedback_str
         latex_cv = await ctx.run_node(cv_writer_node)
         ctx.state["latex_cv"] = latex_cv
+        
+        # Compile CV LaTeX to PDF inside the new directory first
+        cv_tex_path = os.path.join(directory_path, f"CV_{user_name}_{company_name}_{position}.tex")
+        compile_latex(cv_tex_path)
+        
+        # Extract text from compiled PDF
+        cv_pdf_path = cv_tex_path.replace(".tex", ".pdf")
+        cv_extracted_text = extract_text_from_file(cv_pdf_path)
+        ctx.state["cv_text"] = cv_extracted_text
         
         # Simulated ATS Check
         verification = SafeAccess(await ctx.run_node(verification_node))
@@ -465,6 +482,13 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
             latex_cv = await ctx.run_node(cv_writer_node)
             ctx.state["latex_cv"] = latex_cv
             
+            # Recompile LaTeX to PDF
+            compile_latex(cv_tex_path)
+            
+            # Re-extract text from compiled PDF
+            cv_extracted_text = extract_text_from_file(cv_pdf_path)
+            ctx.state["cv_text"] = cv_extracted_text
+            
             # Re-verify
             verification = SafeAccess(await ctx.run_node(verification_node))
             ats_score = verification.ats_score
@@ -478,6 +502,11 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
             
         # STEP 7: Generate Cover Letter
         cover_letter = await ctx.run_node(cover_letter_node)
+        
+        # STEP 8: Final Report Compilation
+        ctx.state["match_analysis_dict"] = match_result._obj.model_dump() if hasattr(match_result._obj, "model_dump") else match_result._obj
+        ctx.state["ats_score"] = ats_score
+        report_pdf_path = await ctx.run_node(compile_report_node)
         
         # Compile CV LaTeX to PDF inside the new directory
         cv_tex_path = os.path.join(directory_path, f"CV_{user_name}_{company_name}_{position}.tex")
