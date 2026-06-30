@@ -75,9 +75,22 @@ def compile_latex(tex_path):
         return False
 
 async def run_automated_workflow():
-    cv_file = "CV_HI_KULATHILAKA_2026_07.pdf"
+    cv_file = "resume.pdf"
     jd_file = "jd.txt"
     
+    # Try to dynamically locate a PDF file in the root if no CLI args are provided
+    if len(sys.argv) <= 1:
+        pdf_files = [f for f in os.listdir(".") if f.lower().endswith(".pdf")]
+        if pdf_files:
+            cv_file = pdf_files[0]
+        else:
+            # Check data/input/ for any PDF
+            input_dir = os.path.join("data", "input")
+            if os.path.exists(input_dir):
+                input_pdfs = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.lower().endswith(".pdf")]
+                if input_pdfs:
+                    cv_file = input_pdfs[0]
+                    
     if len(sys.argv) > 1:
         cv_file = sys.argv[1]
     if len(sys.argv) > 2:
