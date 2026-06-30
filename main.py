@@ -334,7 +334,8 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
     ctx.state["cv_markdown"] = cv_markdown
 
     # STEP 3: Parse Job Descriptions (Scraping and Requirements Extraction)
-    links = read_jd_links()
+    ignore_links = ctx.state.get("ignore_links", False)
+    links = [] if ignore_links else read_jd_links()
     if not links:
         if jd_string and jd_string.strip():
             print("[Workflow] No links in jd_links.md but jd_string was provided. Using jd_string as fallback.")

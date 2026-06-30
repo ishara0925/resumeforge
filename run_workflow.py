@@ -96,7 +96,8 @@ async def run_automated_workflow():
 
     input_payload = {
         "cv_file_path": cv_file,
-        "jd_string": jd_text
+        "jd_string": jd_text,
+        "ignore_links": len(sys.argv) > 2
     }
 
     runner = InMemoryRunner(app=app)
