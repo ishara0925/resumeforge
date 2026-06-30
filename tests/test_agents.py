@@ -11,7 +11,7 @@ from agents.cv_parser import (
     list_parsed_cv_files,
     parse_cv_to_markdown
 )
-from agents.verification_agent import check_keyword_density
+from agents.verification_agent import ATSVerificationResult
 from agents.jd_parser import (
     read_jd_links,
     scrape_url,
@@ -73,18 +73,16 @@ class TestCVParserDeterministic(unittest.TestCase):
         self.assertIn("Built REST APIs", md_output)
 
 class TestVerificationDeterministic(unittest.TestCase):
-    def test_check_keyword_density_missing_terms(self):
-        """Verify TF-IDF check correctly identifies missing keywords."""
-        cv_text = "Experienced software engineer specializing in Python development and data storage."
-        jd_text = "Seeking Python software engineer with extensive Docker, Kubernetes, and PostgreSQL experience."
-        
-        missing = check_keyword_density(cv_text, jd_text, top_n=12)
-        # 'docker', 'kubernetes', 'postgresql' should be in the missing terms
-        missing_lower = [term.lower() for term in missing]
-        
-        self.assertTrue(any("docker" in term for term in missing_lower), "Expected 'docker' in missing terms")
-        self.assertTrue(any("kubernetes" in term for term in missing_lower), "Expected 'kubernetes' in missing terms")
-        self.assertTrue(any("postgresql" in term for term in missing_lower), "Expected 'postgresql' in missing terms")
+    def test_ats_verification_result_schema(self):
+        """Verify that ATSVerificationResult schema can be instantiated correctly."""
+        result = ATSVerificationResult(
+            ats_score=95,
+            missing_exact_keywords=["Docker", "Kubernetes"],
+            formatting_errors=["Header 'Projects' could not be parsed cleanly"]
+        )
+        self.assertEqual(result.ats_score, 95)
+        self.assertEqual(len(result.missing_exact_keywords), 2)
+        self.assertEqual(result.formatting_errors[0], "Header 'Projects' could not be parsed cleanly")
 
 class TestCVParserCaching(unittest.TestCase):
     def setUp(self):

@@ -431,8 +431,7 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
                 
         # STEP 6 & 8: CV Writer & ATS Verification Loop (Score < 90)
         loop_count = 0
-        max_loops = 3
-        feedback_log = []
+        max_loops = 2
         latex_cv = ""
         ats_score = 0
         
@@ -444,15 +443,22 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         
         # Simulated ATS Check
         verification = SafeAccess(await ctx.run_node(verification_node))
-        ats_score = verification.score
-        feedback_log.extend(verification.feedback)
+        ats_score = verification.ats_score
+        missing_exact_keywords = verification.missing_exact_keywords or []
+        formatting_errors = verification.formatting_errors or []
         
         # ATS improvement loop
         while ats_score < 90 and loop_count < max_loops:
             loop_count += 1
             print(f"[Workflow] ATS score {ats_score}/100 is below 90. Refining LaTeX CV (Iteration {loop_count} of {max_loops})...")
             
-            feedback_str = "Refine the LaTeX formatting to address the following feedback:\n" + "\n".join([f"- {fb}" for fb in feedback_log])
+            # Construct strict instructions with missing_exact_keywords and formatting_errors
+            feedback_str = "Refine the LaTeX formatting and keywords to address the following issues:\n"
+            if missing_exact_keywords:
+                feedback_str += "Inject the following exact missing keywords/phrases into the CV: " + ", ".join([f"'{kw}'" for kw in missing_exact_keywords]) + "\n"
+            if formatting_errors:
+                feedback_str += "Fix the following ATS formatting/parsing errors:\n" + "\n".join([f"- {err}" for err in formatting_errors]) + "\n"
+                
             ctx.state["feedback_str"] = feedback_str
             
             # Regenerate LaTeX CV with accumulated feedback
@@ -461,8 +467,9 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
             
             # Re-verify
             verification = SafeAccess(await ctx.run_node(verification_node))
-            ats_score = verification.score
-            feedback_log = list(verification.feedback)
+            ats_score = verification.ats_score
+            missing_exact_keywords = verification.missing_exact_keywords or []
+            formatting_errors = verification.formatting_errors or []
             
         if ats_score < 90:
             print(f"[Workflow] Warning: CV generation completed for JD {idx}. Reached max iterations ({max_loops}) but ATS score is {ats_score}/100.")
