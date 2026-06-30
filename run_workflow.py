@@ -78,6 +78,11 @@ async def run_automated_workflow():
     cv_file = "CV_HI_KULATHILAKA_2026_07.pdf"
     jd_file = "jd.txt"
     
+    if len(sys.argv) > 1:
+        cv_file = sys.argv[1]
+    if len(sys.argv) > 2:
+        jd_file = sys.argv[2]
+    
     if not os.path.exists(cv_file):
         print(f"Error: CV file not found at {cv_file}")
         return

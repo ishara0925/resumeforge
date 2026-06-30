@@ -63,12 +63,22 @@ To run Kero-CV on another machine, follow these steps:
    - Place candidate CV/Resume files (PDF, DOCX, TXT, or MD format) inside the `data/input/` directory.
    - Specify Job Description links or descriptions inside the input setup files.
 
-2. **Run the Automated Workflow:**
+2. **Run the Automated Workflow (with Defaults):**
    ```bash
    python run_workflow.py
    ```
 
-3. **Run Unit Tests:**
+3. **Run with Custom CV and Job Description:**
+   To run the workflow for a specific candidate CV and a specific Job Description file:
+   ```bash
+   python run_workflow.py <path_to_cv_pdf> <path_to_jd_txt>
+   ```
+   *Example:*
+   ```bash
+   python run_workflow.py data/input/my_resume.pdf data/input/job_description.txt
+   ```
+
+4. **Run Unit Tests:**
    ```bash
    python -m unittest tests/test_agents.py
    ```
