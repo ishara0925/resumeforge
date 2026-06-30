@@ -188,7 +188,36 @@ def parse_cv_to_details(file_path: str) -> CVDetails:
     """Synchronously extracts text from a file, parses it using the ADK Agent, and returns CVDetails."""
     return asyncio.run(parse_cv_to_details_async(file_path))
 
+def get_parsed_cv_path(cv_file_path: str) -> str:
+    """Generates the cached parsed CV markdown path for a given CV file path."""
+    base_name = os.path.splitext(os.path.basename(cv_file_path))[0]
+    return os.path.join("data", "input", f"{base_name}_parsed.md")
+
+def list_parsed_cv_files(input_dir: str = "data/input") -> List[str]:
+    """Lists all parsed CV markdown files (ending in .md) in the input directory."""
+    if not os.path.exists(input_dir):
+        return []
+    return [f for f in os.listdir(input_dir) if f.endswith(".md")]
+
+async def parse_cv_to_markdown_async(file_path: str) -> str:
+    """Parses a CV file and returns its standardized Markdown representation, utilizing caching."""
+    parsed_path = get_parsed_cv_path(file_path)
+    if os.path.exists(parsed_path):
+        print(f"[CV Parser] Found cached parsed CV at: {parsed_path}. Skipping LLM call.")
+        with open(parsed_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    print(f"[CV Parser] No cached CV found. Extracting and parsing CV from: {file_path}")
+    details = await parse_cv_to_details_async(file_path)
+    markdown_content = cv_details_to_markdown(details)
+
+    # Save the parsed markdown to disk
+    os.makedirs(os.path.dirname(parsed_path), exist_ok=True)
+    with open(parsed_path, "w", encoding="utf-8") as f:
+        f.write(markdown_content)
+    print(f"[CV Parser] Saved parsed CV markdown to: {parsed_path}")
+    return markdown_content
+
 def parse_cv_to_markdown(file_path: str) -> str:
     """Parses a CV file and returns its standardized Markdown representation."""
-    details = parse_cv_to_details(file_path)
-    return cv_details_to_markdown(details)
+    return asyncio.run(parse_cv_to_markdown_async(file_path))

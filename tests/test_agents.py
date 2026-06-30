@@ -1,7 +1,16 @@
 import unittest
 import os
 import shutil
-from agents.cv_parser import cv_details_to_markdown, extract_text_from_file, CVDetails, WorkExperience, Education
+from agents.cv_parser import (
+    cv_details_to_markdown,
+    extract_text_from_file,
+    CVDetails,
+    WorkExperience,
+    Education,
+    get_parsed_cv_path,
+    list_parsed_cv_files,
+    parse_cv_to_markdown
+)
 from agents.verification_agent import check_keyword_density
 
 class TestCVParserDeterministic(unittest.TestCase):
@@ -68,6 +77,45 @@ class TestVerificationDeterministic(unittest.TestCase):
         self.assertTrue(any("docker" in term for term in missing_lower), "Expected 'docker' in missing terms")
         self.assertTrue(any("kubernetes" in term for term in missing_lower), "Expected 'kubernetes' in missing terms")
         self.assertTrue(any("postgresql" in term for term in missing_lower), "Expected 'postgresql' in missing terms")
+
+class TestCVParserCaching(unittest.TestCase):
+    def setUp(self):
+        self.test_input_dir = os.path.join("data", "input")
+        self.created_input_dir = False
+        if not os.path.exists(self.test_input_dir):
+            os.makedirs(self.test_input_dir, exist_ok=True)
+            self.created_input_dir = True
+            
+        self.temp_cv_name = "test_caching_resume"
+        self.temp_cv_file = f"{self.temp_cv_name}.pdf"
+        self.expected_md_file = os.path.join(self.test_input_dir, f"{self.temp_cv_name}_parsed.md")
+        
+        # Write dummy cached file
+        with open(self.expected_md_file, "w", encoding="utf-8") as f:
+            f.write("# Cached CV Content\nSkills: Caching, Testing")
+
+    def tearDown(self):
+        if os.path.exists(self.expected_md_file):
+            os.remove(self.expected_md_file)
+        if self.created_input_dir and os.path.exists(self.test_input_dir):
+            try:
+                # Only remove if it's empty
+                if not os.listdir(self.test_input_dir):
+                    os.rmdir(self.test_input_dir)
+            except Exception:
+                pass
+
+    def test_get_parsed_cv_path(self):
+        path = get_parsed_cv_path(self.temp_cv_file)
+        self.assertEqual(os.path.normpath(path), os.path.normpath(self.expected_md_file))
+
+    def test_list_parsed_cv_files(self):
+        files = list_parsed_cv_files(self.test_input_dir)
+        self.assertIn(f"{self.temp_cv_name}_parsed.md", files)
+
+    def test_parse_cv_to_markdown_uses_cache(self):
+        content = parse_cv_to_markdown(self.temp_cv_file)
+        self.assertEqual(content, "# Cached CV Content\nSkills: Caching, Testing")
 
 if __name__ == "__main__":
     unittest.main()

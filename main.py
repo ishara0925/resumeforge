@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+from typing import Optional, List
 from dotenv import load_dotenv
 from google.adk import Context, Workflow
 from google.adk.workflow import node
@@ -13,7 +14,13 @@ from google.genai import types
 load_dotenv()
 
 # Import our custom agents (async versions to avoid nesting event loop issues)
-from agents.cv_parser import parse_cv_to_details_async, cv_details_to_markdown
+from agents.cv_parser import (
+    parse_cv_to_details_async,
+    cv_details_to_markdown,
+    parse_cv_to_markdown_async,
+    get_parsed_cv_path,
+    list_parsed_cv_files
+)
 from agents.jd_parser import parse_jd_async
 from agents.match_maker import match_cv_and_jd_async, generate_match_chart
 from agents.cv_writer import write_cv_async
@@ -24,10 +31,23 @@ from agents.verification_agent import verify_ats_async, ATSVerificationResult
 
 @node(name="parse_cv_node")
 async def parse_cv_node(cv_file_path: str) -> str:
-    """Extracts CV text and formats it into Markdown."""
+    """Extracts CV text and formats it into Markdown, respecting cache."""
     print(f"[Node: CV Parser] Extracting & parsing CV from: {cv_file_path}")
-    details = await parse_cv_to_details_async(cv_file_path)
-    return cv_details_to_markdown(details)
+    return await parse_cv_to_markdown_async(cv_file_path)
+
+@node(name="select_cv_node", rerun_on_resume=False)
+async def select_cv_node(ctx: Context, options: List[str]):
+    """Pauses execution and requests the user to select from available parsed CVs."""
+    options_str = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+    yield RequestInput(
+        message=(
+            "=== HUMAN-IN-THE-LOOP: SELECT PARSED CV ===\n"
+            "Multiple parsed CV files were found in the input folder. Please select one:\n"
+            f"{options_str}\n"
+            "Enter the number or filename of the CV to use: "
+        ),
+        payload={"options": options}
+    )
 
 @node(name="edit_cv_markdown_node", rerun_on_resume=False)
 async def edit_cv_markdown_node(ctx: Context, initial_markdown: str):
@@ -113,19 +133,60 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
     # 1. Parse Input
     try:
         data = json.loads(node_input)
-        cv_file_path = data["cv_file_path"]
+        cv_file_path = data.get("cv_file_path", "")
         jd_string = data["jd_string"]
         ctx.state["cv_file_path"] = cv_file_path
         ctx.state["jd_string"] = jd_string
         ctx.state["jd_text"] = jd_string
     except Exception as e:
         raise ValueError(
-            "Workflow input must be a JSON-formatted string with 'cv_file_path' and 'jd_string' keys. "
+            "Workflow input must be a JSON-formatted string with 'jd_string' and optional 'cv_file_path' keys. "
             f"Parsing Error: {e}"
         )
 
     # STEP 1: Parse CV
-    raw_md = await ctx.run_node(parse_cv_node)
+    if cv_file_path and cv_file_path.strip():
+        # User provided the CV file path: use parse_cv_node (which handles cache/LLM)
+        raw_md = await ctx.run_node(parse_cv_node)
+    else:
+        # User did not provide the CV file path: check data/input directory
+        input_dir = os.path.join("data", "input")
+        os.makedirs(input_dir, exist_ok=True)
+        parsed_files = list_parsed_cv_files(input_dir)
+        if not parsed_files:
+            raise ValueError(
+                "No parsed CV files (.md) found in data/input/ directory, and no CV file path was provided. "
+                "Please place a parsed CV markdown file in data/input/ or provide a CV file path."
+            )
+        
+        if len(parsed_files) == 1:
+            selected_file = parsed_files[0]
+            selected_path = os.path.join(input_dir, selected_file)
+            print(f"[Workflow] Single parsed CV found: {selected_path}. Proceeding with it.")
+            with open(selected_path, "r", encoding="utf-8") as f:
+                raw_md = f.read()
+        else:
+            # Multiple parsed CVs are available! Ask user to select.
+            selection = await ctx.run_node(select_cv_node, options=parsed_files)
+            
+            selected_index = 0
+            try:
+                val = selection.strip()
+                if val.isdigit():
+                    idx = int(val) - 1
+                    if 0 <= idx < len(parsed_files):
+                        selected_index = idx
+                else:
+                    if val in parsed_files:
+                        selected_index = parsed_files.index(val)
+            except Exception:
+                pass
+            
+            selected_file = parsed_files[selected_index]
+            selected_path = os.path.join(input_dir, selected_file)
+            print(f"[Workflow] Selected CV file: {selected_path}")
+            with open(selected_path, "r", encoding="utf-8") as f:
+                raw_md = f.read()
 
     # STEP 2: HITL Pause - CV Markdown Review
     ctx.state["initial_markdown"] = raw_md
@@ -234,11 +295,21 @@ async def run_interactive_workflow():
     # Get inputs
     cv_file = input("Enter path to CV file (PDF, DOCX, TXT, MD): ").strip()
     if not cv_file:
-        cv_file = "data/sample_cv.txt"
-        print(f"Using default dummy CV path: {cv_file}")
-        os.makedirs("data", exist_ok=True)
-        with open(cv_file, "w", encoding="utf-8") as f:
-            f.write("Candidate: John Doe\nContact: john.doe@example.com\nSkills: Python, SQL, C++, Docker\nExperience: 3 years Python Developer.")
+        # Check if there are any parsed CVs in data/input
+        input_dir = os.path.join("data", "input")
+        parsed_files = []
+        if os.path.exists(input_dir):
+            parsed_files = [f for f in os.listdir(input_dir) if f.endswith(".md")]
+        
+        if parsed_files:
+            print("No CV file path provided. Checking data/input for parsed CVs...")
+            cv_file = ""
+        else:
+            cv_file = "data/sample_cv.txt"
+            print(f"No cached parsed CVs found and no CV path provided. Using default dummy CV path: {cv_file}")
+            os.makedirs("data", exist_ok=True)
+            with open(cv_file, "w", encoding="utf-8") as f:
+                f.write("Candidate: John Doe\nContact: john.doe@example.com\nSkills: Python, SQL, C++, Docker\nExperience: 3 years Python Developer.")
 
     jd_text = input("Enter Job Description string (or press enter for default): ").strip()
     if not jd_text:
