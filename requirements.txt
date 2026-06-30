@@ -6,3 +6,4 @@ pymupdf
 python-docx
 requests
 scikit-learn
+fpdf2

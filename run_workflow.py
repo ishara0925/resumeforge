@@ -150,37 +150,47 @@ async def run_automated_workflow():
             if final_report:
                 try:
                     report = json.loads(final_report)
-                    print(f"Match Score: {report.get('match_score')}/100")
-                    print(f"ATS Score: {report.get('ats_score')}/100")
-                    print(f"Skills Chart: {report.get('chart_path')}")
+                    results = report.get("results", [])
+                    if not results:
+                        # Fallback for single-report format
+                        results = [report]
                     
-                    # Write results to output files
-                    os.makedirs("data", exist_ok=True)
-                    
-                    # 1. Save CV Markdown (.md)
-                    cv_md_path = "data/parsed_cv.md"
-                    with open(cv_md_path, "w", encoding="utf-8") as f:
-                        f.write(report.get("cv_markdown", ""))
-                    print(f"Parsed CV Markdown saved to: {cv_md_path}")
-                    
-                    # 2. Save LaTeX CV (.tex)
-                    latex_cv_path = "data/output_cv.tex"
-                    with open(latex_cv_path, "w", encoding="utf-8") as f:
-                        f.write(report.get("latex_cv", ""))
-                    print(f"LaTeX CV written to: {latex_cv_path}")
+                    for res in results:
+                        idx = res.get("index", 1)
+                        print(f"\n[JD {idx}] Match Score: {res.get('match_score')}/100")
+                        print(f"[JD {idx}] ATS Score: {res.get('ats_score')}/100")
+                        print(f"[JD {idx}] Skills Chart: {res.get('chart_path')}")
+                        
+                        # Write results to output files
+                        os.makedirs("data/output", exist_ok=True)
+                        
+                        # 1. Save CV Markdown (.md)
+                        cv_md_path = f"data/output/cv_markdown_{idx}.md"
+                        with open(cv_md_path, "w", encoding="utf-8") as f:
+                            f.write(res.get("cv_markdown", ""))
+                        
+                        # 2. Save LaTeX CV (.tex)
+                        latex_cv_path = f"data/output/cv_final_{idx}.tex"
+                        with open(latex_cv_path, "w", encoding="utf-8") as f:
+                            f.write(res.get("latex_cv", ""))
+                        print(f"[JD {idx}] LaTeX CV written to: {latex_cv_path}")
 
-                    # 3. Save LaTeX Cover Letter (.tex)
-                    cover_letter_path = "data/output_cover_letter.tex"
-                    with open(cover_letter_path, "w", encoding="utf-8") as f:
-                        f.write(report.get("cover_letter", ""))
-                    print(f"Cover Letter LaTeX written to: {cover_letter_path}")
-                    
-                    # 4. Compile CV to PDF
-                    compile_latex(latex_cv_path)
-                    
-                    # 5. Compile Cover Letter to PDF
-                    compile_latex(cover_letter_path)
-                    
+                        # 3. Save LaTeX/Markdown Cover Letter (.md)
+                        cover_letter_path = f"data/output/cover_letter_{idx}.md"
+                        with open(cover_letter_path, "w", encoding="utf-8") as f:
+                            f.write(res.get("cover_letter", ""))
+                        print(f"[JD {idx}] Cover Letter written to: {cover_letter_path}")
+                        
+                        # 4. Compile CV to PDF
+                        compile_latex(latex_cv_path)
+                        
+                        # 5. Compile Cover Letter to PDF if it is LaTeX
+                        if "\\documentclass" in res.get("cover_letter", ""):
+                            cl_tex_path = f"data/output/cover_letter_{idx}.tex"
+                            with open(cl_tex_path, "w", encoding="utf-8") as f:
+                                f.write(res.get("cover_letter", ""))
+                            compile_latex(cl_tex_path)
+                            
                 except Exception as e:
                     print("Failed to parse report or write output files:", e)
                     print(final_report)

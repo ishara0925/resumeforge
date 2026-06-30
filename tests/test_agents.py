@@ -12,6 +12,12 @@ from agents.cv_parser import (
     parse_cv_to_markdown
 )
 from agents.verification_agent import check_keyword_density
+from agents.jd_parser import (
+    read_jd_links,
+    scrape_url,
+    process_jds_step1_scrape,
+    check_for_scraping_failures
+)
 
 class TestCVParserDeterministic(unittest.TestCase):
     def setUp(self):
@@ -116,6 +122,60 @@ class TestCVParserCaching(unittest.TestCase):
     def test_parse_cv_to_markdown_uses_cache(self):
         content = parse_cv_to_markdown(self.temp_cv_file)
         self.assertEqual(content, "# Cached CV Content\nSkills: Caching, Testing")
+
+class TestJDParserBatch(unittest.TestCase):
+    def setUp(self):
+        self.input_dir = os.path.join("data", "input")
+        self.links_file = os.path.join(self.input_dir, "jd_links.md")
+        
+        # Backup existing jd_links.md if it exists
+        self.backup_links = None
+        if os.path.exists(self.links_file):
+            with open(self.links_file, "r", encoding="utf-8") as f:
+                self.backup_links = f.read()
+                
+        # Write test URLs to jd_links.md
+        os.makedirs(self.input_dir, exist_ok=True)
+        with open(self.links_file, "w", encoding="utf-8") as f:
+            f.write("https://httpbin.org/status/200\nhttps://httpbin.org/status/404\n")
+
+    def tearDown(self):
+        # Restore backup or remove links_file
+        if self.backup_links is not None:
+            with open(self.links_file, "w", encoding="utf-8") as f:
+                f.write(self.backup_links)
+        else:
+            if os.path.exists(self.links_file):
+                os.remove(self.links_file)
+                
+        # Clean up any jd_raw files created by the test
+        if os.path.exists(self.input_dir):
+            for file in os.listdir(self.input_dir):
+                if file.startswith("jd_raw_") and file.endswith(".md"):
+                    try:
+                        os.remove(os.path.join(self.input_dir, file))
+                    except Exception:
+                        pass
+
+    def test_read_jd_links(self):
+        links = read_jd_links(self.links_file)
+        self.assertEqual(len(links), 2)
+        self.assertEqual(links[0], "https://httpbin.org/status/200")
+        self.assertEqual(links[1], "https://httpbin.org/status/404")
+
+    def test_check_for_scraping_failures(self):
+        results = [
+            {"index": 1, "raw_path": os.path.join(self.input_dir, "jd_raw_1.md")},
+            {"index": 2, "raw_path": os.path.join(self.input_dir, "jd_raw_2.md")}
+        ]
+        # Create one non-empty and one empty file
+        with open(results[0]["raw_path"], "w", encoding="utf-8") as f:
+            f.write("Some job description text")
+        with open(results[1]["raw_path"], "w", encoding="utf-8") as f:
+            f.write("") # empty file represents failure
+            
+        failures = check_for_scraping_failures(results)
+        self.assertEqual(failures, [2])
 
 if __name__ == "__main__":
     unittest.main()

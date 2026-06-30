@@ -60,3 +60,142 @@ async def parse_jd_async(jd_string: str) -> JDDetails:
 def parse_jd(jd_string: str) -> JDDetails:
     """Synchronously parses a job description string using the ADK Agent and returns JDDetails."""
     return asyncio.run(parse_jd_async(jd_string))
+
+import os
+import requests
+from bs4 import BeautifulSoup
+from typing import Dict, Any
+
+def read_jd_links(filepath: str = "data/input/jd_links.md") -> List[str]:
+    """Reads JD URLs from the links file, ignoring empty lines and comments."""
+    if not os.path.exists(filepath):
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("# Put your JD URLs here, one per line\n")
+        return []
+    with open(filepath, "r", encoding="utf-8") as f:
+        links = []
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                links.append(line)
+        return links
+
+def scrape_url(url: str) -> str:
+    """Scrapes a URL and returns clean visible text, or empty string on failure."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
+            return ""
+            
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Remove unwanted elements
+        for element in soup(["script", "style", "header", "footer", "nav", "aside"]):
+            element.decompose()
+            
+        text = soup.get_text(separator="\n")
+        
+        # Clean up whitespace
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        cleaned_text = "\n".join(chunk for chunk in chunks if chunk)
+        return cleaned_text.strip()
+    except Exception as e:
+        print(f"[JD Scraper] Error scraping {url}: {e}")
+        return ""
+
+def process_jds_step1_scrape() -> List[Dict[str, Any]]:
+    """Step 1 of batch JD processing: Reads links, performs scraping, and writes files."""
+    links = read_jd_links()
+    results = []
+    
+    os.makedirs(os.path.join("data", "input"), exist_ok=True)
+    
+    for idx, url in enumerate(links, start=1):
+        raw_path = os.path.join("data", "input", f"jd_raw_{idx}.md")
+        
+        # If file already exists and has content, we skip scraping to respect manual edits
+        if os.path.exists(raw_path) and os.path.getsize(raw_path) > 0:
+            print(f"[JD Parser] Raw file {raw_path} already exists with content. Skipping scraping.")
+            results.append({
+                "index": idx,
+                "url": url,
+                "raw_path": raw_path,
+                "success": True
+            })
+            continue
+            
+        print(f"[JD Parser] Scraping JD from URL {idx}: {url}")
+        text = scrape_url(url)
+        
+        if text:
+            with open(raw_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            results.append({
+                "index": idx,
+                "url": url,
+                "raw_path": raw_path,
+                "success": True
+            })
+            print(f"[JD Parser] Scraped successfully and saved to: {raw_path}")
+        else:
+            # Create empty placeholder file
+            with open(raw_path, "w", encoding="utf-8") as f:
+                f.write("")
+            results.append({
+                "index": idx,
+                "url": url,
+                "raw_path": raw_path,
+                "success": False
+            })
+            print(f"[JD Parser] Scraping failed for {url}. Created empty placeholder: {raw_path}")
+            
+    return results
+
+def check_for_scraping_failures(results: List[Dict[str, Any]]) -> List[int]:
+    """Checks if any raw files are empty (i.e. scraping failed or was empty)."""
+    failed_indices = []
+    for res in results:
+        raw_path = res["raw_path"]
+        if not os.path.exists(raw_path) or os.path.getsize(raw_path) == 0:
+            failed_indices.append(res["index"])
+    return failed_indices
+
+async def process_jds_step2_parse(results: List[Dict[str, Any]]) -> List[str]:
+    """Step 2 of batch JD processing: Parses all raw JDs using LLM and returns parsed JSON file paths."""
+    parsed_paths = []
+    os.makedirs(os.path.join("data", "output"), exist_ok=True)
+    
+    for res in results:
+        idx = res["index"]
+        raw_path = res["raw_path"]
+        parsed_path = os.path.join("data", "output", f"jd_parsed_{idx}.json")
+        
+        # Caching logic: check if the parsed JSON already exists and has content.
+        if os.path.exists(parsed_path) and os.path.getsize(parsed_path) > 0:
+            print(f"[JD Parser] Found cached parsed JD at: {parsed_path}. Skipping LLM call.")
+            parsed_paths.append(parsed_path)
+            continue
+
+        # Read the raw JD text (from scraped or manually pasted content)
+        with open(raw_path, "r", encoding="utf-8") as f:
+            jd_text = f.read().strip()
+            
+        if not jd_text:
+            raise ValueError(f"JD raw file {raw_path} is empty, but parsing was attempted. All raw files must have content.")
+            
+        # Run the LLM extraction
+        print(f"[JD Parser] Extracting requirements from raw JD {idx}...")
+        details = await parse_jd_async(jd_text)
+        
+        # Save to output file
+        with open(parsed_path, "w", encoding="utf-8") as f:
+            f.write(details.model_dump_json(indent=2))
+        print(f"[JD Parser] Saved parsed JD details to: {parsed_path}")
+        parsed_paths.append(parsed_path)
+        
+    return parsed_paths

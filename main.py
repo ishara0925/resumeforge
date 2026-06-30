@@ -21,8 +21,14 @@ from agents.cv_parser import (
     get_parsed_cv_path,
     list_parsed_cv_files
 )
-from agents.jd_parser import parse_jd_async
-from agents.match_maker import match_cv_and_jd_async, generate_match_chart
+from agents.jd_parser import (
+    parse_jd_async,
+    process_jds_step1_scrape,
+    check_for_scraping_failures,
+    process_jds_step2_parse,
+    read_jd_links
+)
+from agents.match_maker import match_cv_and_jd_async, generate_match_chart, generate_match_report_pdf
 from agents.cv_writer import write_cv_async
 from agents.cover_letter_agent import generate_cover_letter_async
 from agents.verification_agent import verify_ats_async, ATSVerificationResult
@@ -46,7 +52,20 @@ async def select_cv_node(ctx: Context, options: List[str]):
             f"{options_str}\n"
             "Enter the number or filename of the CV to use: "
         ),
-        payload={"options": options}
+    )
+
+@node(name="handle_scraping_failures_node", rerun_on_resume=False)
+async def handle_scraping_failures_node(ctx: Context, failed_indices: List[int]):
+    """Pauses execution and asks the user to manually copy and paste the JD text."""
+    indices_str = ", ".join([f"jd_raw_{idx}.md" for idx in failed_indices])
+    yield RequestInput(
+        message=(
+            "=== HUMAN-IN-THE-LOOP: SCRAPING FAILURES ===\n"
+            f"WARNING: Scraping failed or returned empty results for the following files: {indices_str}\n"
+            "Please manually copy and paste the job description text into the respective empty files inside 'data/input/'.\n"
+            "Once you have updated the files, press Enter/send empty here to proceed."
+        ),
+        payload={"failed_indices": failed_indices}
     )
 
 @node(name="edit_cv_markdown_node", rerun_on_resume=False)
@@ -82,16 +101,20 @@ def generate_chart_node(skills_comparison: list, chart_path: str):
     return True
 
 @node(name="ask_match_approval", rerun_on_resume=False)
-async def ask_match_approval(ctx: Context, score: int, chart_path: str):
+async def ask_match_approval(ctx: Context, score: int, chart_path: str, report_pdf_path: str = ""):
     """Pauses execution if match score is below 70 to request user's approval to proceed."""
+    msg = (
+        f"=== HUMAN-IN-THE-LOOP: LOW MATCH APPROVAL ===\n"
+        f"WARNING: The calculated match score is {score}/100 (below threshold of 70).\n"
+    )
+    if report_pdf_path:
+        msg += f"A detailed match report has been generated at {report_pdf_path}. Please review it before proceeding.\n"
+    msg += f"A visual breakdown has been saved to: {chart_path}\n"
+    msg += "Do you want to proceed with this candidate anyway? (Type 'yes' or 'no'): "
+    
     yield RequestInput(
-        message=(
-            f"=== HUMAN-IN-THE-LOOP: LOW MATCH APPROVAL ===\n"
-            f"WARNING: The calculated match score is {score}/100 (below threshold of 70).\n"
-            f"A visual breakdown has been saved to: {chart_path}\n"
-            "Do you want to proceed with this candidate anyway? (Type 'yes' or 'no'): "
-        ),
-        payload={"score": score, "chart_path": chart_path}
+        message=msg,
+        payload={"score": score, "chart_path": chart_path, "report_pdf_path": report_pdf_path}
     )
 
 @node(name="cv_writer_node")
@@ -134,13 +157,13 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
     try:
         data = json.loads(node_input)
         cv_file_path = data.get("cv_file_path", "")
-        jd_string = data["jd_string"]
+        jd_string = data.get("jd_string", "")
         ctx.state["cv_file_path"] = cv_file_path
         ctx.state["jd_string"] = jd_string
         ctx.state["jd_text"] = jd_string
     except Exception as e:
         raise ValueError(
-            "Workflow input must be a JSON-formatted string with 'jd_string' and optional 'cv_file_path' keys. "
+            "Workflow input must be a JSON-formatted string with optional 'cv_file_path' and 'jd_string' keys. "
             f"Parsing Error: {e}"
         )
 
@@ -197,79 +220,180 @@ async def kero_cv_workflow(ctx: Context, node_input: str) -> str:
         cv_markdown = raw_md
     ctx.state["cv_markdown"] = cv_markdown
 
-    # STEP 3: Parse JD
-    jd_details = SafeAccess(await ctx.run_node(parse_jd_node))
-    jd_details_json = jd_details.model_dump_json()
-    ctx.state["jd_details_json"] = jd_details_json
-
-    # STEP 4: Match Making
-    match_result = SafeAccess(await ctx.run_node(match_maker_node))
-
-    # Generate Matplotlib chart
-    chart_path = "data/match_chart.png"
-    ctx.state["skills_comparison"] = match_result.skills_comparison
-    ctx.state["chart_path"] = chart_path
-    await ctx.run_node(generate_chart_node)
-
-    # STEP 5: HITL Pause - Low score check (< 70)
-    if match_result.match_score < 70:
-        ctx.state["score"] = match_result.match_score
-        approval = await ctx.run_node(ask_match_approval)
-        if approval.strip().lower() not in ("yes", "y", "approve", "proceed", "ok"):
-            raise ValueError(f"Workflow aborted by user. Low match score: {match_result.match_score}/100")
-
-    # STEP 6 & 8: CV Writer & ATS Verification Loop (Score < 90)
-    loop_count = 0
-    max_loops = 3
-    feedback_log = []
-    latex_cv = ""
-    ats_score = 0
-
-    # Initial draft
-    feedback_str = "Initial draft based on CV parser and match analysis."
-    ctx.state["feedback_str"] = feedback_str
-    latex_cv = await ctx.run_node(cv_writer_node)
-    ctx.state["latex_cv"] = latex_cv
-
-    # Simulated ATS Check
-    verification = SafeAccess(await ctx.run_node(verification_node))
-    ats_score = verification.score
-    feedback_log.extend(verification.feedback)
-
-    # ATS improvement loop
-    while ats_score < 90 and loop_count < max_loops:
-        loop_count += 1
-        print(f"[Workflow] ATS score {ats_score}/100 is below 90. Refining LaTeX CV (Iteration {loop_count} of {max_loops})...")
+    # STEP 3: Parse Job Descriptions (Scraping and Requirements Extraction)
+    links = read_jd_links()
+    if not links:
+        if jd_string and jd_string.strip():
+            print("[Workflow] No links in jd_links.md but jd_string was provided. Using jd_string as fallback.")
+            raw_path = os.path.join("data", "input", "jd_raw_1.md")
+            os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+            with open(raw_path, "w", encoding="utf-8") as f:
+                f.write(jd_string)
+            results = [{
+                "index": 1,
+                "url": "local_fallback",
+                "raw_path": raw_path,
+                "success": True
+            }]
+        else:
+            raise ValueError(
+                "No JD links found in data/input/jd_links.md and no JD string was provided. "
+                "Please add a URL to data/input/jd_links.md or provide a JD string."
+            )
+    else:
+        # Run scraping step
+        results = process_jds_step1_scrape()
+        failed_indices = check_for_scraping_failures(results)
         
-        feedback_str = "Refine the LaTeX formatting to address the following feedback:\n" + "\n".join([f"- {fb}" for fb in feedback_log])
+        while failed_indices:
+            print(f"[Workflow] Scraping failures detected for indices: {failed_indices}")
+            # Pause and request manual copy-paste
+            await ctx.run_node(handle_scraping_failures_node, failed_indices=failed_indices)
+            
+            # Recheck if they are still failing/empty
+            rechecked_failures = check_for_scraping_failures(results)
+            if rechecked_failures == failed_indices:
+                # If they didn't modify anything but pressed proceed, check if we have a fallback jd_string
+                if jd_string and jd_string.strip():
+                    print("[Workflow] Manual pasting skipped. Filling empty JD files with fallback jd_string.")
+                    for idx in failed_indices:
+                        raw_path = os.path.join("data", "input", f"jd_raw_{idx}.md")
+                        with open(raw_path, "w", encoding="utf-8") as f:
+                            f.write(jd_string)
+                    break
+                else:
+                    raise ValueError(
+                        f"Scraping failed for JDs: {failed_indices} and no content was pasted. "
+                        "Please fill the empty files or provide a fallback JD string."
+                    )
+            failed_indices = rechecked_failures
+            
+    # Now run step 2: LLM parsing
+    parsed_jd_paths = await process_jds_step2_parse(results)
+
+    batch_results = []
+    
+    # Process each Job Description in a loop
+    for idx, parsed_path in enumerate(parsed_jd_paths, start=1):
+        print(f"\n==================================================")
+        print(f" Processing Job Description {idx}/{len(parsed_jd_paths)}")
+        print(f"==================================================")
+        
+        with open(parsed_path, "r", encoding="utf-8") as f:
+            jd_details_dict = json.load(f)
+            
+        jd_details_json = json.dumps(jd_details_dict)
+        ctx.state["jd_details_json"] = jd_details_json
+        
+        # Get raw JD text for ATS verification
+        raw_jd_path = os.path.join("data", "input", f"jd_raw_{idx}.md")
+        with open(raw_jd_path, "r", encoding="utf-8") as f:
+            current_jd_text = f.read()
+        ctx.state["jd_text"] = current_jd_text
+        
+        # STEP 4: Match Making
+        match_result = SafeAccess(await ctx.run_node(match_maker_node))
+        
+        # Generate chart
+        chart_path = f"data/match_chart_{idx}.png"
+        ctx.state["skills_comparison"] = match_result.skills_comparison
+        ctx.state["chart_path"] = chart_path
+        await ctx.run_node(generate_chart_node)
+        
+        # Generate PDF Match Report
+        report_pdf_path = f"data/output/match_report_{idx}.pdf"
+        generate_match_report_pdf(match_result._obj, chart_path, report_pdf_path)
+        
+        # STEP 5: HITL Pause - Low score check (< 70)
+        if match_result.match_score < 70:
+            ctx.state["score"] = match_result.match_score
+            ctx.state["chart_path"] = chart_path
+            ctx.state["report_pdf_path"] = report_pdf_path
+            approval = await ctx.run_node(ask_match_approval)
+            if approval.strip().lower() not in ("yes", "y", "approve", "proceed", "ok"):
+                print(f"[Workflow] Aborted by user for JD {idx} due to low match score.")
+                continue
+                
+        # STEP 6 & 8: CV Writer & ATS Verification Loop (Score < 90)
+        loop_count = 0
+        max_loops = 3
+        feedback_log = []
+        latex_cv = ""
+        ats_score = 0
+        
+        # Initial draft
+        feedback_str = "Initial draft based on CV parser and match analysis."
         ctx.state["feedback_str"] = feedback_str
-        
-        # Regenerate LaTeX CV with accumulated feedback
         latex_cv = await ctx.run_node(cv_writer_node)
         ctx.state["latex_cv"] = latex_cv
         
-        # Re-verify
+        # Simulated ATS Check
         verification = SafeAccess(await ctx.run_node(verification_node))
         ats_score = verification.score
-        feedback_log = list(verification.feedback)
-
-    if ats_score < 90:
-        print(f"[Workflow] Warning: CV generation completed. Reached max iterations ({max_loops}) but ATS score is {ats_score}/100.")
-    else:
-        print(f"[Workflow] ATS score requirement satisfied: {ats_score}/100.")
-
-    # STEP 7: Generate Cover Letter
-    cover_letter = await ctx.run_node(cover_letter_node)
-
-    # Final Output Report
-    report = {
-        "match_score": match_result.match_score,
-        "ats_score": ats_score,
-        "chart_path": chart_path,
-        "cv_markdown": cv_markdown,
-        "latex_cv": latex_cv,
-        "cover_letter": cover_letter
-    }
+        feedback_log.extend(verification.feedback)
+        
+        # ATS improvement loop
+        while ats_score < 90 and loop_count < max_loops:
+            loop_count += 1
+            print(f"[Workflow] ATS score {ats_score}/100 is below 90. Refining LaTeX CV (Iteration {loop_count} of {max_loops})...")
+            
+            feedback_str = "Refine the LaTeX formatting to address the following feedback:\n" + "\n".join([f"- {fb}" for fb in feedback_log])
+            ctx.state["feedback_str"] = feedback_str
+            
+            # Regenerate LaTeX CV with accumulated feedback
+            latex_cv = await ctx.run_node(cv_writer_node)
+            ctx.state["latex_cv"] = latex_cv
+            
+            # Re-verify
+            verification = SafeAccess(await ctx.run_node(verification_node))
+            ats_score = verification.score
+            feedback_log = list(verification.feedback)
+            
+        if ats_score < 90:
+            print(f"[Workflow] Warning: CV generation completed for JD {idx}. Reached max iterations ({max_loops}) but ATS score is {ats_score}/100.")
+        else:
+            print(f"[Workflow] ATS score requirement satisfied for JD {idx}: {ats_score}/100.")
+            
+        # STEP 7: Generate Cover Letter
+        cover_letter = await ctx.run_node(cover_letter_node)
+        
+        # Save final outputs with corresponding indices (e.g. cv_final_<index>.tex and cover_letter_<index>.md)
+        cv_final_path = os.path.join("data", "output", f"cv_final_{idx}.tex")
+        cover_letter_path = os.path.join("data", "output", f"cover_letter_{idx}.md")
+        
+        os.makedirs(os.path.dirname(cv_final_path), exist_ok=True)
+        with open(cv_final_path, "w", encoding="utf-8") as f:
+            f.write(latex_cv)
+        with open(cover_letter_path, "w", encoding="utf-8") as f:
+            f.write(cover_letter)
+            
+        print(f"[Workflow] Saved final CV to: {cv_final_path}")
+        print(f"[Workflow] Saved final Cover Letter to: {cover_letter_path}")
+        
+        batch_results.append({
+            "index": idx,
+            "match_score": match_result.match_score,
+            "ats_score": ats_score,
+            "chart_path": chart_path,
+            "match_report_path": f"data/output/match_report_{idx}.pdf",
+            "cv_markdown": cv_markdown,
+            "latex_cv": latex_cv,
+            "cover_letter": cover_letter
+        })
+        
+    # Return batch report as JSON
+    report = {"results": batch_results}
+    if batch_results:
+        # Keep backward compatibility for single results checks in runner
+        last_res = batch_results[-1]
+        report["match_score"] = last_res["match_score"]
+        report["ats_score"] = last_res["ats_score"]
+        report["chart_path"] = last_res["chart_path"]
+        report["match_report_path"] = last_res.get("match_report_path", "")
+        report["cv_markdown"] = last_res["cv_markdown"]
+        report["latex_cv"] = last_res["latex_cv"]
+        report["cover_letter"] = last_res["cover_letter"]
+        
     return json.dumps(report, indent=2)
 
 # --- Workflow Setup ---
