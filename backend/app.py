@@ -3,7 +3,7 @@ import shutil
 import uuid
 import subprocess
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -127,6 +127,7 @@ class MatchReportRequest(BaseModel):
 class GenerateFinalRequest(BaseModel):
     cvMarkdown: str
     matchAnalysis: dict
+    originalFilename: Optional[str] = None
 
 # Endpoints
 @app.post("/api/upload-cv")
@@ -234,6 +235,15 @@ async def generate_final(request: GenerateFinalRequest):
         cv_md_path = os.path.join(job_dir_path, "cv_markdown.md")
         with open(cv_md_path, "w", encoding="utf-8") as f:
             f.write(cv_markdown)
+            
+        # Save updated CV markdown back to parser cache if original filename is provided
+        if request.originalFilename:
+            base_name = os.path.splitext(os.path.basename(request.originalFilename))[0]
+            cache_path = os.path.join("data", "input", f"{base_name}_parsed.md")
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, "w", encoding="utf-8") as f:
+                f.write(cv_markdown)
+            print(f"[API] Saved updated CV markdown back to cache: {cache_path}")
             
         # ATS Loop setup
         loop_count = 0

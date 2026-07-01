@@ -203,7 +203,7 @@ export default function App() {
       setLoading(true);
       setLoadingMessage("Running Simulated ATS Verification & LaTeX Optimization...");
       
-      const finalRes = await apiService.generateFinal(cvMarkdown, matchAnalysis);
+      const finalRes = await apiService.generateFinal(cvMarkdown, matchAnalysis, cvFile?.name);
       setFinalOutputs(finalRes);
       
       setLoading(false);

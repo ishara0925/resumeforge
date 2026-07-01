@@ -85,13 +85,13 @@ export const apiService = {
    * @param {object} matchAnalysis - The approved match analysis object
    * @returns {Promise<{ success: boolean, cvPdfUrl: string, coverLetterPdfUrl: string, atsScore: number, cvMarkdown: string, latexCv: string, coverLetter: string }>}
    */
-  generateFinal: async (cvMarkdown, matchAnalysis) => {
+  generateFinal: async (cvMarkdown, matchAnalysis, originalFilename) => {
     const response = await fetch(`${API_BASE_URL}/api/generate-final`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ cvMarkdown, matchAnalysis }),
+      body: JSON.stringify({ cvMarkdown, matchAnalysis, originalFilename }),
     });
 
     if (!response.ok) {
