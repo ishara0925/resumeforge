@@ -31,11 +31,39 @@ Write-Host "`n[2/4] Installing backend dependencies..." -ForegroundColor Yellow
 Start-Process "backend/.venv/Scripts/python.exe" -ArgumentList "-m pip install -r backend/requirements.txt" -Wait -NoNewWindow
 Write-Host "Backend dependencies installed successfully." -ForegroundColor Gray
 
-# Check .env file
-if (-not (Test-Path "backend/.env")) {
-    Write-Host "`n[Warning] backend/.env file not found. Creating a template..." -ForegroundColor Magenta
-    New-Item -Path "backend/.env" -ItemType File -Value "GEMINI_API_KEY=your_actual_key_here`n" | Out-Null
-    Write-Host "Template created at backend/.env. Please fill in your GEMINI_API_KEY before running the agents." -ForegroundColor Gray
+# Check .env file or GEMINI_API_KEY
+$env_path = "backend/.env"
+$key_exists = $false
+
+if (Test-Path $env_path) {
+    $content = Get-Content $env_path
+    foreach ($line in $content) {
+        if ($line -match "^GEMINI_API_KEY=(.+)$") {
+            $val = $Matches[1].Trim()
+            if ($val -and $val -ne "your_actual_key_here") {
+                $key_exists = $true
+            }
+        }
+    }
+}
+
+if (-not $key_exists) {
+    Write-Host "`n[Setup] Gemini API Key Setup" -ForegroundColor Magenta
+    Write-Host "ResumeForge requires a Gemini API Key to power its agents." -ForegroundColor Gray
+    Write-Host "If you do not have one, get it from Google AI Studio: https://aistudio.google.com/" -ForegroundColor Gray
+    
+    $api_key = Read-Host "Please enter your Gemini API Key"
+    $api_key = $api_key.Trim()
+    
+    if ($api_key) {
+        "GEMINI_API_KEY=$api_key" | Out-File -FilePath $env_path -Encoding utf8
+        Write-Host "Successfully saved GEMINI_API_KEY to $env_path" -ForegroundColor Green
+    } else {
+        Write-Host "No API key entered. You will need to manually set GEMINI_API_KEY in backend/.env before running." -ForegroundColor Yellow
+        if (-not (Test-Path $env_path)) {
+            "GEMINI_API_KEY=your_actual_key_here" | Out-File -FilePath $env_path -Encoding utf8
+        }
+    }
 }
 
 # 4. Setup React Frontend

@@ -17,7 +17,9 @@ To run ResumeForge locally, ensure you have the following installed:
 3.  **LaTeX Compiler**: A compiler supporting the `xelatex` engine:
     *   **Windows**: [MiKTeX](https://miktex.org/) is recommended (verify `xelatex` is added to your system `PATH`).
     *   **macOS / Linux**: [TeX Live](https://www.tug.org/texlive/).
-4.  **Gemini API Key**: Required by the ADK agents.
+4.  **Gemini API Key**: Required by the ADK agents to parse profiles, perform gap analyses, and execute the ATS optimization loop.
+    *   **How to Get an API Key**: Go to [Google AI Studio](https://aistudio.google.com/), sign in, and click **"Get API key"** to generate a free-tier or pay-as-you-go key.
+    *   **Setup**: You don't need to configure this manually! The startup scripts (detailed below) will automatically detect if the key is missing or is set to a placeholder, prompting you in the terminal to paste it and writing it directly to `backend/.env`.
 
 ---
 

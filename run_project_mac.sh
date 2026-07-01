@@ -35,10 +35,33 @@ echo -e "\n[2/4] Installing backend dependencies..."
 backend/.venv/bin/pip install -r backend/requirements.txt
 echo "Backend dependencies installed successfully."
 
-if [ ! -f "backend/.env" ]; then
-    echo -e "\n[Warning] backend/.env file not found. Creating a template..."
-    echo "GEMINI_API_KEY=your_actual_key_here" > backend/.env
-    echo "Template created at backend/.env. Please fill in your GEMINI_API_KEY before running the agents."
+# Check .env file or GEMINI_API_KEY
+ENV_PATH="backend/.env"
+KEY_EXISTS=false
+
+if [ -f "$ENV_PATH" ]; then
+    if grep -qE "^GEMINI_API_KEY=[^[:space:]]+" "$ENV_PATH" && ! grep -q "your_actual_key_here" "$ENV_PATH"; then
+        KEY_EXISTS=true
+    fi
+fi
+
+if [ "$KEY_EXISTS" = false ]; then
+    echo -e "\n[Setup] Gemini API Key Setup"
+    echo "ResumeForge requires a Gemini API Key to power its agents."
+    echo "Get your key from Google AI Studio: https://aistudio.google.com/"
+    
+    read -p "Please enter your Gemini API Key: " API_KEY
+    API_KEY=$(echo "$API_KEY" | xargs)
+    
+    if [ -n "$API_KEY" ]; then
+        echo "GEMINI_API_KEY=$API_KEY" > "$ENV_PATH"
+        echo "Successfully saved GEMINI_API_KEY to $ENV_PATH"
+    else
+        echo "No API key entered. You will need to manually set GEMINI_API_KEY in backend/.env before running."
+        if [ ! -f "$ENV_PATH" ]; then
+            echo "GEMINI_API_KEY=your_actual_key_here" > "$ENV_PATH"
+        fi
+    fi
 fi
 
 # 4. Setup React Frontend
