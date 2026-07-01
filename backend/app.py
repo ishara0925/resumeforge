@@ -1,8 +1,39 @@
 import sys
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+class SafeStreamWrapper:
+    def __init__(self, stream):
+        self.stream = stream
+        self._encoding = 'utf-8'
+
+    @property
+    def encoding(self):
+        return self._encoding
+
+    def write(self, data):
+        if not data:
+            return
+        try:
+            self.stream.write(data)
+        except UnicodeEncodeError:
+            enc = getattr(self.stream, 'encoding', None) or 'ascii'
+            safe_data = data.encode(enc, errors='replace').decode(enc)
+            self.stream.write(safe_data)
+
+    def flush(self):
+        if hasattr(self.stream, 'flush'):
+            self.stream.flush()
+
+    def reconfigure(self, **kwargs):
+        if hasattr(self.stream, 'reconfigure'):
+            self.stream.reconfigure(**kwargs)
+            if 'encoding' in kwargs:
+                self._encoding = kwargs['encoding']
+
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
+
+sys.stdout = SafeStreamWrapper(sys.stdout)
+sys.stderr = SafeStreamWrapper(sys.stderr)
 
 import os
 import shutil
@@ -219,6 +250,16 @@ async def get_match_report(request: MatchReportRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to run Match Maker: {str(e)}")
 
+def sanitize_filename(name: str) -> str:
+    """Removes any characters that are not alphanumeric, spaces, hyphens, or underscores to prevent path issues."""
+    if not name:
+        return "Unknown"
+    # Convert non-ASCII spaces/hyphens to ASCII
+    name = re.sub(r'[\u2013\u2014]', '-', name)
+    cleaned = re.sub(r'[^a-zA-Z0-9_\-\s]', '', name)
+    cleaned = re.sub(r'[\s_]+', '_', cleaned)
+    return cleaned.strip('_')
+
 @app.post("/api/generate-final")
 async def generate_final(request: GenerateFinalRequest):
     try:
@@ -232,8 +273,14 @@ async def generate_final(request: GenerateFinalRequest):
         company_name = match_analysis.get("company_name") or "Company"
         position = match_analysis.get("target_job_title") or "Position"
         
+        # Sanitize variables for safe filenames and directory paths
+        user_name = sanitize_filename(user_name or "Candidate")
+        user_name_with_initials = sanitize_filename(user_name_with_initials or "Candidate")
+        company_name = sanitize_filename(company_name)
+        position = sanitize_filename(position)
+        
         # Create a unique output directory for this run
-        job_dir_name = f"{user_name}_{company_name}_{position}".replace(" ", "_")
+        job_dir_name = f"{user_name}_{company_name}_{position}"
         job_dir_path = os.path.join(OUTPUT_DIR, job_dir_name)
         os.makedirs(job_dir_path, exist_ok=True)
         
@@ -245,6 +292,7 @@ async def generate_final(request: GenerateFinalRequest):
         # Save updated CV markdown back to parser cache if original filename is provided
         if request.originalFilename:
             base_name = os.path.splitext(os.path.basename(request.originalFilename))[0]
+            base_name = sanitize_filename(base_name)
             cache_path = os.path.join("data", "input", f"{base_name}_parsed.md")
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             with open(cache_path, "w", encoding="utf-8") as f:
@@ -336,4 +384,8 @@ async def generate_final(request: GenerateFinalRequest):
             "coverLetter": cover_letter
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate final outputs: {str(e)}")
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[API Error] final output generation failed: {str(e)}")
+        print(tb)
+        raise HTTPException(status_code=500, detail=f"Failed to generate final outputs: {str(e)}\nTraceback:\n{tb}")
