@@ -118,3 +118,16 @@ If you prefer running them manually, you will need two terminal sessions:
 *   **ATS Loop Optimization**: Under `/api/generate-final`, the backend automatically runs a 3-step loop, updating the LaTeX draft with verifier feedback until the simulated ATS score reaches 90+.
 *   **Live Markdown Caching**: Whenever you generate a final resume, any edits you made to the base CV Markdown are saved back to `backend/data/input/{your_resume}_parsed.md`. The next time you upload that CV, your edits are loaded instantly, skipping the parser LLM call.
 *   **Live PDF Previews**: The frontend embeds a dynamic `<iframe>` pointing directly to the LaTeX-compiled PDF assets hosted on `/static`, allowing real-time inspection.
+
+---
+
+## 💡 How to Use the New Features
+
+### 1. Interactive Markdown Editing & Local Download
+*   **Step 2 (CV Markdown Review)**: Once your CV is parsed into Markdown, you can edit it directly in the text editor. To save a copy of your edits locally at any point, click the **`↓ Download MD`** button in the editor's header.
+*   **Step 4 (Final Outputs)**: After compiling, you can download the final tailored Markdown description alongside your PDFs by clicking the **`Download Markdown (.MD)`** button in the left action sidebar.
+
+### 2. Live Markdown Caching (Auto-Save)
+*   When you click **`Approve & Optimize Resume`** in Step 3, the backend automatically updates the parser's cache file (`backend/data/input/{your_resume}_parsed.md`) with your edited markdown.
+*   In subsequent runs, uploading the same CV file will load your saved edits instantly, skipping the LLM extraction step. This preserves manual corrections and speeds up execution.
+
