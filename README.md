@@ -23,14 +23,32 @@ To run ResumeForge locally, ensure you have the following installed:
 
 ## 🚀 Quick Start Instructions
 
-### The Easy Way (Windows Automated Script)
-You can set up environments, install dependencies, and run both servers automatically using the PowerShell script:
-1. Open a PowerShell window at the root of the project.
-2. Run the script:
-   ```powershell
-   ./run_project.ps1
-   ```
-   This will install any missing Python venv or npm dependencies and spawn **two separate command windows** (one for the FastAPI server, one for the Vite React server) running side-by-side.
+### The Easy Way (Automated Startup Scripts)
+
+Choose the script that matches your operating system:
+
+#### 1. Windows (PowerShell)
+Open a PowerShell window at the root of the project and execute:
+```powershell
+./run_project.ps1
+```
+This automatically initializes the backend `.venv`, runs `pip/npm install`, and spawns **two separate console windows** side-by-side (one for FastAPI, one for Vite).
+
+#### 2. Ubuntu / Linux (Bash)
+Open a terminal at the root of the project and execute:
+```bash
+chmod +x run_project_ubuntu.sh
+./run_project_ubuntu.sh
+```
+This runs the setup process, launches both servers concurrently in the background (logging outputs separately to `backend.log` and `frontend.log`), and binds a clean `Ctrl+C` interrupt handler to shut them down together.
+
+#### 3. macOS (Bash + Terminal)
+Open a terminal at the root of the project and execute:
+```bash
+chmod +x run_project_mac.sh
+./run_project_mac.sh
+```
+This runs the setup and utilizes native AppleScript to spawn **two separate macOS Terminal windows** for the FastAPI and Vite servers.
 
 ### The Manual Way (Step-by-Step)
 If you prefer running them manually, you will need two terminal sessions:
