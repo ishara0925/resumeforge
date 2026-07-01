@@ -146,6 +146,22 @@ export default function App() {
     setCvFile(null);
   };
 
+  const handleDownloadMarkdown = () => {
+    const blob = new Blob([cvMarkdown], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    const baseName = cvFile?.name 
+      ? cvFile.name.substring(0, cvFile.name.lastIndexOf('.')) 
+      : 'cv';
+    link.setAttribute('download', `${baseName}_parsed.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Step 1: Submit Form to Analyze
   const handleStartAnalysis = async () => {
     if (!cvFile) {
@@ -466,7 +482,16 @@ export default function App() {
                       <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>
                         Source Markdown
                       </span>
-                      <span className="badge badge-success">Editable</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button 
+                          className="btn-secondary" 
+                          onClick={handleDownloadMarkdown}
+                          style={{ padding: '4px 10px', fontSize: '0.75rem', border: '1px solid var(--color-border-glass)' }}
+                        >
+                          ↓ Download MD
+                        </button>
+                        <span className="badge badge-success">Editable</span>
+                      </div>
                     </div>
                     <textarea
                       className="editor-textarea"
@@ -771,6 +796,14 @@ export default function App() {
                         }}
                       >
                         Download Both (PDF)
+                      </button>
+
+                      <button 
+                        className="btn-secondary" 
+                        style={{ width: '100%', padding: '10px' }}
+                        onClick={handleDownloadMarkdown}
+                      >
+                        Download Markdown (.MD)
                       </button>
                     </div>
 
