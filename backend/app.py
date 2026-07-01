@@ -384,7 +384,8 @@ async def generate_final(request: GenerateFinalRequest):
             "atsScore": ats_score,
             "cvMarkdown": cv_markdown,
             "latexCv": latex_cv,
-            "coverLetter": cover_letter
+            "coverLetter": cover_letter,
+            "jobDirName": job_dir_name
         }
     except Exception as e:
         import traceback
@@ -392,3 +393,78 @@ async def generate_final(request: GenerateFinalRequest):
         print(f"[API Error] final output generation failed: {str(e)}")
         print(tb)
         raise HTTPException(status_code=500, detail=f"Failed to generate final outputs: {str(e)}\nTraceback:\n{tb}")
+
+class SaveLatexRequest(BaseModel):
+    jobDirName: str
+    fileType: str  # 'cv' or 'cl'
+    latexCode: str
+    recompile: bool = True
+
+@app.get("/api/get-latex")
+async def get_latex(jobDirName: str, fileType: str):
+    try:
+        job_dir_path = os.path.join(OUTPUT_DIR, jobDirName)
+        if not os.path.exists(job_dir_path):
+            raise HTTPException(status_code=404, detail="Job directory not found")
+            
+        prefix = "CV_" if fileType == "cv" else "COVER_"
+        tex_file = None
+        for f in os.listdir(job_dir_path):
+            if f.startswith(prefix) and f.endswith(".tex"):
+                tex_file = f
+                break
+                
+        if not tex_file:
+            raise HTTPException(status_code=404, detail=f"LaTeX source file not found for {fileType}")
+            
+        tex_path = os.path.join(job_dir_path, tex_file)
+        with open(tex_path, "r", encoding="utf-8") as f:
+            latex_code = f.read()
+            
+        return {
+            "success": True,
+            "latexCode": latex_code,
+            "filename": tex_file
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-latex")
+async def save_latex(request: SaveLatexRequest):
+    try:
+        job_dir_path = os.path.join(OUTPUT_DIR, request.jobDirName)
+        if not os.path.exists(job_dir_path):
+            raise HTTPException(status_code=404, detail="Job directory not found")
+            
+        prefix = "CV_" if request.fileType == "cv" else "COVER_"
+        tex_file = None
+        for f in os.listdir(job_dir_path):
+            if f.startswith(prefix) and f.endswith(".tex"):
+                tex_file = f
+                break
+                
+        if not tex_file:
+            raise HTTPException(status_code=404, detail=f"LaTeX source file not found for {request.fileType}")
+            
+        tex_path = os.path.join(job_dir_path, tex_file)
+        
+        # Save edited LaTeX code
+        with open(tex_path, "w", encoding="utf-8") as f:
+            f.write(request.latexCode)
+            
+        pdf_url = ""
+        if request.recompile:
+            compilation_success = compile_latex(tex_path)
+            if not compilation_success:
+                raise ValueError("LaTeX compilation failed. Please check your syntax.")
+                
+            pdf_filename = tex_file.replace(".tex", ".pdf")
+            pdf_url = f"http://localhost:8000/static/{request.jobDirName}/{pdf_filename}"
+            
+        return {
+            "success": True,
+            "pdfUrl": pdf_url,
+            "message": "LaTeX source saved and recompiled successfully" if request.recompile else "LaTeX source saved successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

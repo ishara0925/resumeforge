@@ -73,6 +73,13 @@ export default function App() {
   const [finalOutputs, setFinalOutputs] = useState(null);
   const [activeFinalTab, setActiveFinalTab] = useState('cv'); // 'cv' or 'cl'
 
+  // Step 4 LaTeX Live Editor State
+  const [latexCode, setLatexCode] = useState('');
+  const [latexLayout, setLatexLayout] = useState('split'); // 'split' or 'preview'
+  const [isCompiling, setIsCompiling] = useState(false);
+  const [pdfVersion, setPdfVersion] = useState(0);
+  const [latexError, setLatexError] = useState(null);
+
   // Dynamic status details for the loading spinner
   const [loadingSubText, setLoadingSubText] = useState('');
 
@@ -98,6 +105,23 @@ export default function App() {
     }
     return () => clearInterval(interval);
   }, [loading]);
+
+  // Fetch LaTeX source when entering Step 4 or changing tabs
+  useEffect(() => {
+    if (step === 4 && finalOutputs?.jobDirName) {
+      const fetchLatex = async () => {
+        try {
+          setLatexError(null);
+          const res = await apiService.getLatex(finalOutputs.jobDirName, activeFinalTab);
+          setLatexCode(res.latexCode);
+        } catch (err) {
+          console.error("Error loading LaTeX source:", err);
+          setLatexError("Failed to load LaTeX source code.");
+        }
+      };
+      fetchLatex();
+    }
+  }, [step, finalOutputs, activeFinalTab]);
 
   // -------------------------------------------------------------
   // EVENT HANDLERS
@@ -244,6 +268,40 @@ export default function App() {
     setJdDetails(null);
     setMatchAnalysis(null);
     setFinalOutputs(null);
+  };
+
+  const handleRecompile = async () => {
+    if (!finalOutputs?.jobDirName) return;
+    try {
+      setIsCompiling(true);
+      setLatexError(null);
+      await apiService.saveLatex(finalOutputs.jobDirName, activeFinalTab, latexCode, true);
+      // Increment cache buster to force iframe reload
+      setPdfVersion(prev => prev + 1);
+      alert("Recompiled successfully!");
+    } catch (err) {
+      console.error("Recompilation failed:", err);
+      setLatexError(err.message || "Compilation failed. Check LaTeX syntax.");
+      alert("LaTeX Compilation Failed! Please check your code syntax.");
+    } finally {
+      setIsCompiling(false);
+    }
+  };
+
+  const handleSaveOnly = async () => {
+    if (!finalOutputs?.jobDirName) return;
+    try {
+      setIsCompiling(true);
+      setLatexError(null);
+      await apiService.saveLatex(finalOutputs.jobDirName, activeFinalTab, latexCode, false);
+      alert("Saved source successfully (without recompiling).");
+    } catch (err) {
+      console.error("Saving failed:", err);
+      setLatexError(err.message || "Failed to save LaTeX code.");
+      alert("Failed to save LaTeX code.");
+    } finally {
+      setIsCompiling(false);
+    }
   };
 
   // Render helper for Markdown Preview (handles basic bullet styles, headers)
@@ -747,9 +805,26 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="final-tab-layout">
+                <div className="d-flex justify-end gap-2 mb-4" style={{ maxWidth: '1200px', margin: '0 auto 16px auto' }}>
+                  <button 
+                    className={`btn-secondary ${latexLayout === 'preview' ? 'active' : ''}`}
+                    onClick={() => setLatexLayout('preview')}
+                    style={{ padding: '6px 14px', fontSize: '0.85rem', backgroundColor: latexLayout === 'preview' ? 'rgba(0, 168, 150, 0.2)' : 'transparent', border: latexLayout === 'preview' ? '1px solid var(--color-accent-teal)' : '1px solid var(--color-border-glass)' }}
+                  >
+                    📄 PDF Preview Only
+                  </button>
+                  <button 
+                    className={`btn-secondary ${latexLayout === 'split' ? 'active' : ''}`}
+                    onClick={() => setLatexLayout('split')}
+                    style={{ padding: '6px 14px', fontSize: '0.85rem', backgroundColor: latexLayout === 'split' ? 'rgba(0, 168, 150, 0.2)' : 'transparent', border: latexLayout === 'split' ? '1px solid var(--color-accent-teal)' : '1px solid var(--color-border-glass)' }}
+                  >
+                    🛠️ Split Editor (Edit LaTeX)
+                  </button>
+                </div>
+
+                <div className="final-tab-layout" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', maxWidth: '1200px', margin: '0 auto' }}>
                   {/* Left Column: File Switchers & Actions */}
-                  <div className="final-side-panel">
+                  <div className="final-side-panel" style={{ width: '260px', flexShrink: 0 }}>
                     <div 
                       className={`output-file-card ${activeFinalTab === 'cv' ? 'active' : ''}`}
                       onClick={() => setActiveFinalTab('cv')}
@@ -757,7 +832,7 @@ export default function App() {
                       <div className="output-file-icon">📄</div>
                       <div className="output-file-info">
                         <p className="output-file-name">CV_Optimized.pdf</p>
-                        <span className="output-file-size">148 KB</span>
+                        <span className="output-file-size">Active</span>
                       </div>
                     </div>
 
@@ -768,7 +843,7 @@ export default function App() {
                       <div className="output-file-icon">✉</div>
                       <div className="output-file-info">
                         <p className="output-file-name">Cover_Letter.pdf</p>
-                        <span className="output-file-size">84 KB</span>
+                        <span className="output-file-size">Active</span>
                       </div>
                     </div>
 
@@ -807,28 +882,99 @@ export default function App() {
                       </button>
                     </div>
 
-                    <button className="btn-secondary mt-4" onClick={handleReset}>
+                    <button className="btn-secondary mt-4" style={{ width: '100%' }} onClick={handleReset}>
                       ◀ Start New Profile
                     </button>
                   </div>
 
-                  {/* Right Column: PDF Preview via IFrame */}
-                  <div className="glass-panel pdf-preview-box">
-                    <div className="d-flex justify-between align-center" style={{ borderBottom: '1px solid var(--color-border-glass)', paddingBottom: '12px' }}>
+                  {/* Right Column: PDF Preview / Editor */}
+                  <div className="glass-panel pdf-preview-box" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <div className="d-flex justify-between align-center" style={{ borderBottom: '1px solid var(--color-border-glass)', paddingBottom: '12px', marginBottom: '16px' }}>
                       <h4 style={{ margin: 0 }}>
-                        {activeFinalTab === 'cv' ? 'Optimized Resume Document' : 'Tailored Cover Letter'}
+                        {activeFinalTab === 'cv' ? 'Resume Document' : 'Cover Letter'} - Source & Preview
                       </h4>
-                      <span className="badge badge-success">LaTeX-compiled</span>
+                      <span className="badge badge-success">LaTeX Workspace</span>
                     </div>
 
-                    <div className="pdf-viewer-wrapper mt-4" style={{ height: '650px', overflow: 'hidden' }}>
-                      <iframe 
-                        src={activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl} 
-                        style={{ width: '100%', height: '100%', border: 'none', borderRadius: '4px' }}
-                        title="Document Preview"
-                        key={activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl}
-                      />
-                    </div>
+                    {latexLayout === 'split' ? (
+                      <div className="latex-editor-split" style={{ display: 'flex', gap: '16px', flex: 1, height: '650px' }}>
+                        {/* Left: LaTeX Code Editor */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div className="d-flex justify-between align-center" style={{ marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 'bold' }}>
+                              LATEX SOURCE CODE
+                            </span>
+                            <div className="d-flex gap-2">
+                              <button 
+                                className="btn-secondary" 
+                                onClick={handleSaveOnly}
+                                disabled={isCompiling}
+                                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                              >
+                                Save Source
+                              </button>
+                              <button 
+                                className="btn-primary" 
+                                onClick={handleRecompile}
+                                disabled={isCompiling}
+                                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                              >
+                                {isCompiling ? "Compiling..." : "Recompile & Preview ➔"}
+                              </button>
+                            </div>
+                          </div>
+
+                          {latexError && (
+                            <div style={{ padding: '8px 12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                              ⚠️ {latexError}
+                            </div>
+                          )}
+
+                          <textarea
+                            value={latexCode}
+                            onChange={(e) => setLatexCode(e.target.value)}
+                            style={{ 
+                              flex: 1, 
+                              fontFamily: 'Courier New, Courier, monospace', 
+                              fontSize: '0.85rem', 
+                              backgroundColor: 'rgba(0, 0, 0, 0.2)', 
+                              color: '#f8f8f2', 
+                              padding: '12px', 
+                              border: '1px solid var(--color-border-glass)', 
+                              borderRadius: '4px',
+                              resize: 'none',
+                              outline: 'none',
+                              lineHeight: '1.4'
+                            }}
+                          />
+                        </div>
+
+                        {/* Right: PDF IFrame Viewer */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 'bold', marginBottom: '4px' }}>
+                            LIVE COMPILED PDF PREVIEW
+                          </span>
+                          <div className="pdf-viewer-wrapper" style={{ flex: 1, border: '1px solid var(--color-border-glass)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <iframe 
+                              src={`${activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl}?v=${pdfVersion}`} 
+                              style={{ width: '100%', height: '100%', border: 'none' }}
+                              title="Document Preview"
+                              key={`${activeFinalTab}-${pdfVersion}`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Preview Only Mode */
+                      <div className="pdf-viewer-wrapper" style={{ height: '650px', overflow: 'hidden' }}>
+                        <iframe 
+                          src={`${activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl}?v=${pdfVersion}`} 
+                          style={{ width: '100%', height: '100%', border: 'none', borderRadius: '4px' }}
+                          title="Document Preview"
+                          key={`${activeFinalTab}-${pdfVersion}`}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

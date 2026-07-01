@@ -100,5 +100,36 @@ export const apiService = {
     }
 
     return await response.json();
+  },
+
+  /**
+   * Retrieves the LaTeX source code of the CV or Cover Letter from the job directory.
+   */
+  getLatex: async (jobDirName, fileType) => {
+    const response = await fetch(`${API_BASE_URL}/api/get-latex?jobDirName=${encodeURIComponent(jobDirName)}&fileType=${encodeURIComponent(fileType)}`);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || "Failed to fetch LaTeX source");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Saves and optionally recompiles the LaTeX source code of the CV or Cover Letter.
+   */
+  saveLatex: async (jobDirName, fileType, latexCode, recompile = true) => {
+    const response = await fetch(`${API_BASE_URL}/api/save-latex`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jobDirName, fileType, latexCode, recompile }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || "Failed to save/compile LaTeX source");
+    }
+    return await response.json();
   }
 };
