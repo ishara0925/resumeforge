@@ -250,15 +250,18 @@ async def get_match_report(request: MatchReportRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to run Match Maker: {str(e)}")
 
-def sanitize_filename(name: str) -> str:
-    """Removes any characters that are not alphanumeric, spaces, hyphens, or underscores to prevent path issues."""
+def sanitize_filename(name: str, max_len: int = 30) -> str:
+    """Removes any characters that are not alphanumeric, spaces, hyphens, or underscores, and truncates to prevent long path issues."""
     if not name:
         return "Unknown"
     # Convert non-ASCII spaces/hyphens to ASCII
     name = re.sub(r'[\u2013\u2014]', '-', name)
     cleaned = re.sub(r'[^a-zA-Z0-9_\-\s]', '', name)
     cleaned = re.sub(r'[\s_]+', '_', cleaned)
-    return cleaned.strip('_')
+    cleaned = cleaned.strip('_')
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip('_')
+    return cleaned
 
 @app.post("/api/generate-final")
 async def generate_final(request: GenerateFinalRequest):
