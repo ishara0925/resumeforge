@@ -23,9 +23,19 @@ To run ResumeForge locally, ensure you have the following installed:
 
 ## 🚀 Quick Start Instructions
 
-You will need two terminal sessions running: one for the backend server and one for the frontend server.
+### The Easy Way (Windows Automated Script)
+You can set up environments, install dependencies, and run both servers automatically using the PowerShell script:
+1. Open a PowerShell window at the root of the project.
+2. Run the script:
+   ```powershell
+   ./run_project.ps1
+   ```
+   This will install any missing Python venv or npm dependencies and spawn **two separate command windows** (one for the FastAPI server, one for the Vite React server) running side-by-side.
 
-### 1. Run the Backend API
+### The Manual Way (Step-by-Step)
+If you prefer running them manually, you will need two terminal sessions:
+
+#### 1. Run the Backend API
 
 1.  Navigate to the backend directory:
     ```bash
