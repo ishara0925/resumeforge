@@ -123,7 +123,7 @@ export default function App() {
       const validTypes = ['.pdf', '.docx', '.md'];
       const fileExt = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
       if (validTypes.includes(fileExt)) {
-        setCvFile({ name: file.name, size: (file.size / 1024 / 1024).toFixed(2) + " MB" });
+        setCvFile(file);
       } else {
         alert("Please upload only .pdf, .docx, or .md files.");
       }
@@ -133,7 +133,7 @@ export default function App() {
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setCvFile({ name: file.name, size: (file.size / 1024 / 1024).toFixed(2) + " MB" });
+      setCvFile(file);
     }
   };
 
@@ -377,7 +377,11 @@ export default function App() {
                               <p className="output-file-name" style={{ margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '200px' }}>
                                 {cvFile.name}
                               </p>
-                              <span className="output-file-size">{cvFile.size}</span>
+                              <span className="output-file-size">
+                                {typeof cvFile.size === 'number' 
+                                  ? (cvFile.size / 1024 / 1024).toFixed(2) + " MB" 
+                                  : cvFile.size}
+                              </span>
                             </div>
                           </div>
                           <button className="btn-remove-file" onClick={removeFile} title="Remove file">
@@ -746,10 +750,11 @@ export default function App() {
                     {/* Download Buttons */}
                     <div className="glass-panel flex-column gap-2 mt-4" style={{ padding: '16px' }}>
                       <a 
-                        href={`#download-${activeFinalTab}`} 
+                        href={activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl} 
+                        target="_blank"
+                        rel="noreferrer"
                         className="btn-primary"
-                        style={{ width: '100%' }}
-                        onClick={(e) => { e.preventDefault(); alert(`Downloading final_${activeFinalTab === 'cv' ? 'cv' : 'cover_letter'}.pdf...`); }}
+                        style={{ width: '100%', textDecoration: 'none', display: 'inline-flex', justifyContent: 'center', alignItems: 'center' }}
                       >
                         <span>Download {activeFinalTab === 'cv' ? 'CV' : 'Cover Letter'}</span>
                         <span>↓</span>
@@ -758,9 +763,14 @@ export default function App() {
                       <button 
                         className="btn-secondary" 
                         style={{ width: '100%', padding: '10px' }}
-                        onClick={() => { alert("Downloading both files in a zip package..."); }}
+                        onClick={() => { 
+                          window.open(finalOutputs.cvPdfUrl, '_blank');
+                          setTimeout(() => {
+                            window.open(finalOutputs.coverLetterPdfUrl, '_blank');
+                          }, 300);
+                        }}
                       >
-                        Download All (ZIP)
+                        Download Both (PDF)
                       </button>
                     </div>
 
@@ -769,7 +779,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Right Column: PDF Preview Mock */}
+                  {/* Right Column: PDF Preview via IFrame */}
                   <div className="glass-panel pdf-preview-box">
                     <div className="d-flex justify-between align-center" style={{ borderBottom: '1px solid var(--color-border-glass)', paddingBottom: '12px' }}>
                       <h4 style={{ margin: 0 }}>
@@ -778,106 +788,14 @@ export default function App() {
                       <span className="badge badge-success">LaTeX-compiled</span>
                     </div>
 
-                    {activeFinalTab === 'cv' ? (
-                      /* Resume preview mock */
-                      <div className="cv-a4-page animate-fade-in">
-                        <div className="cv-a4-name">John Doe</div>
-                        <div className="cv-a4-pos">Senior Python Developer</div>
-                        <div className="cv-a4-contact">
-                          john.doe@example.com | +1-555-0199 | Austin, TX | github.com/johndoe
-                        </div>
-
-                        <div className="cv-a4-section">
-                          <div className="cv-a4-section-title">Professional Summary</div>
-                          <div style={{ color: '#444', lineHeight: '1.4', fontSize: '0.8rem' }}>
-                            Detail-oriented and results-driven Senior Python Developer with a strong track record of designing, building, and maintaining scalable web applications. Proficient in **Python**, **FastAPI**, **Docker**, and cloud technologies. Strong background in microservices architectures and database design.
-                          </div>
-                        </div>
-
-                        <div className="cv-a4-section">
-                          <div className="cv-a4-section-title">Work Experience</div>
-                          <div className="cv-a4-entry-header">
-                            <span>Senior Python Developer</span>
-                            <span>2024 – Present</span>
-                          </div>
-                          <div className="cv-a4-entry-org">TechInnovate Corp — Austin, TX</div>
-                          <div className="cv-a4-bullet">
-                            Led technology implementation for a real-time data analysis platform, integrating **FastAPI** web framework to handle 10k+ concurrent requests.
-                          </div>
-                          <div className="cv-a4-bullet">
-                            Optimized third-party API analytical loops, increasing customer conversion and sales metrics by 22% over six months.
-                          </div>
-                          <div className="cv-a4-bullet">
-                            Managed a core team of 5 backend developers, overseeing deployment pipelines and container testing configurations.
-                          </div>
-
-                          <div className="cv-a4-entry-header" style={{ marginTop: '12px' }}>
-                            <span>Software Developer</span>
-                            <span>2022 – 2024</span>
-                          </div>
-                          <div className="cv-a4-entry-org">DevSystems Inc — Boston, MA</div>
-                          <div className="cv-a4-bullet">
-                            Built, tested, and containerized Python web services using **Docker** and **Kubernetes** to achieve 99.9% uptime.
-                          </div>
-                          <div className="cv-a4-bullet">
-                            Implemented rigorous testing patterns using **pytest** and mock fixtures, elevating total **Unit Testing** coverage from 60% to 92%.
-                          </div>
-                        </div>
-
-                        <div className="cv-a4-section">
-                          <div className="cv-a4-section-title">Education</div>
-                          <div className="cv-a4-entry-header">
-                            <span>Bachelor of Science in Computer Science</span>
-                            <span>2018 – 2022</span>
-                          </div>
-                          <div className="cv-a4-entry-org">University of Engineering (GPA: 3.8/4.0, Cum Laude)</div>
-                        </div>
-
-                        <div className="cv-a4-section">
-                          <div className="cv-a4-section-title">Skills</div>
-                          <div className="cv-a4-skills-list">
-                            <span className="cv-a4-skills-cat">Languages:</span> Python, JavaScript, SQL, Bash. <br />
-                            <span className="cv-a4-skills-cat">Frameworks & tools:</span> FastAPI, React, Node.js, Docker, Kubernetes, AWS, pytest.
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Cover letter preview mock */
-                      <div className="cv-a4-page animate-fade-in" style={{ padding: '50px 45px', fontSize: '0.85rem', color: '#333' }}>
-                        <div style={{ float: 'right', textAlign: 'right', fontSize: '0.75rem', color: '#7f8c8d' }}>
-                          July 1, 2026 <br />
-                          Austin, Texas
-                        </div>
-                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '24px' }}>John Doe</div>
-
-                        <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '24px' }}>
-                          To, <br />
-                          Hiring Manager <br />
-                          Apex Solutions <br />
-                        </div>
-
-                        <div style={{ fontWeight: 'bold', marginBottom: '14px' }}>
-                          RE: Application for Senior Python Developer position
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.8rem', lineHeight: '1.5', color: '#444' }}>
-                          <p>Dear Hiring Team,</p>
-                          <p>
-                            I am writing to express my strong interest in the Senior Python Developer position at Apex Solutions. With a solid foundation in software development and containerized cloud systems, along with my hands-on experience in building microservices, I am confident in my ability to make an immediate impact on your technical initiatives.
-                          </p>
-                          <p>
-                            During my tenure at TechInnovate Corp, I led key developments using FastAPI and Python to structure our analytical platform services, supporting a large scale of requests with low latency. Containerization using Docker and orchestrating services with Kubernetes has been a core pillar of my design philosophy. Additionally, I prioritize code quality, having led testing audits using pytest to maintain unit testing coverage above 90%.
-                          </p>
-                          <p>
-                            Apex Solutions' focus on highly reliable cloud platforms aligns perfectly with my professional background. I would welcome the opportunity to discuss how my skill set and experiences match your team's requirements in more detail. Thank you for your time and consideration.
-                          </p>
-                          <p style={{ marginTop: '20px' }}>
-                            Sincerely, <br />
-                            <strong>John Doe</strong>
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                    <div className="pdf-viewer-wrapper mt-4" style={{ height: '650px', overflow: 'hidden' }}>
+                      <iframe 
+                        src={activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl} 
+                        style={{ width: '100%', height: '100%', border: 'none', borderRadius: '4px' }}
+                        title="Document Preview"
+                        key={activeFinalTab === 'cv' ? finalOutputs.cvPdfUrl : finalOutputs.coverLetterPdfUrl}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

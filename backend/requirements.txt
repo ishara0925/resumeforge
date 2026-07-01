@@ -7,3 +7,7 @@ python-docx
 requests
 scikit-learn
 fpdf2
+fastapi
+uvicorn
+python-multipart
+
