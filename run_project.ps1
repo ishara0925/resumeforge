@@ -1,6 +1,9 @@
 # ResumeForge Full-Stack Setup & Run Script
 # Operating System: Windows (PowerShell)
 
+# Force UTF-8 encoding for Python output to prevent Windows console encoding crashes
+$env:PYTHONIOENCODING="utf-8"
+
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "     ResumeForge Setup & Runner Script    " -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan

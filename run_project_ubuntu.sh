@@ -6,6 +6,9 @@
 # Exit immediately if any command fails
 set -e
 
+# Force UTF-8 encoding for Python output to prevent console encoding crashes
+export PYTHONIOENCODING="utf-8"
+
 echo "========================================="
 echo "   ResumeForge Setup & Runner (Ubuntu)   "
 echo "========================================="

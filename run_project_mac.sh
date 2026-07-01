@@ -6,6 +6,9 @@
 # Exit immediately if any command fails
 set -e
 
+# Force UTF-8 encoding for Python output to prevent console encoding crashes
+export PYTHONIOENCODING="utf-8"
+
 echo "========================================="
 echo "    ResumeForge Setup & Runner (macOS)   "
 echo "========================================="
@@ -82,7 +85,7 @@ ROOT_DIR=$(pwd)
 
 # Start FastAPI Backend in a new Terminal window via AppleScript
 echo "-> Launching backend FastAPI server at http://localhost:8000"
-osascript -e "tell application \"Terminal\" to do script \"cd '$ROOT_DIR/backend' && source .venv/bin/activate && python -m uvicorn app:app --reload --port 8000\""
+osascript -e "tell application \"Terminal\" to do script \"cd '$ROOT_DIR/backend' && source .venv/bin/activate && export PYTHONIOENCODING=utf-8 && python -m uvicorn app:app --reload --port 8000\""
 
 # Start Vite Frontend in a new Terminal window via AppleScript
 echo "-> Launching frontend Vite React server at http://localhost:5173"
