@@ -1,52 +1,57 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# ==========================================
+# Monorepo Gitignore Configuration
+# ==========================================
 
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-
-# Editor / IDE
+# Editor & System Files
 .vscode/
 .idea/
+.DS_Store
 *.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.swp
+*.lock
 
-# Environment files
-.env
-.env.*
+# ==========================================
+# Backend Configuration (Python / LaTeX)
+# ==========================================
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+backend/.Python
+backend/build/
+backend/dist/
+backend/sdist/
+backend/wheels/
+backend/*.egg-info/
+backend/*.egg
 
-# Input documents
-*.pdf
-jd.txt
+# Virtual environments
+backend/.venv/
+backend/venv/
+backend/env/
 
-# Generated data
-data/
+# Environment configurations
+backend/.env
+backend/.env.*
+
+# Input documents & local caches
+backend/*.pdf
+backend/jd.txt
+backend/data/
+!backend/data/.gitkeep
+backend/pdf-forge-exports/
+
+# ==========================================
+# Frontend Configuration (React / Vite)
+# ==========================================
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+frontend/.eslintcache
+frontend/package-lock.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
