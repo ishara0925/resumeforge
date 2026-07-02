@@ -1,3 +1,5 @@
+![ResumeForge Banner](https://github.com/user-attachments/assets/2c1a3e89-5532-4910-8768-842beffc98fb)
+
 # ResumeForge: Agentic CV & Cover Letter Tailoring Platform
 
 ResumeForge is an intelligent, multi-agent platform designed to parse candidate CVs, compare them against Job Descriptions (JDs), identify gaps, perform simulated ATS keyword density auditing, and automatically draft & compile tailored, publication-ready LaTeX CVs and cover letters.
@@ -144,5 +146,4 @@ Awesome-CV provides the elegant design system, modern layouts, and beautiful typ
 - **Original Author**: Claud D. Park (<posquit0.bj@gmail.com>)
 - **Website**: [http://www.posquit0.com](http://www.posquit0.com)
 - **GitHub**: [@posquit0](https://github.com/posquit0)
-
 
